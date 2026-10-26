@@ -28,3 +28,10 @@
 - **Status**: Aceito
 - **Contexto**: O frontend só deve conter chaves públicas (`anon_key` / `publishable_key`).
 - **Decisão**: Credenciais de serviço (`service_role_key`) ficam estritamente confinadas em variáveis de ambiente das Edge Functions do Supabase e nunca no repositório público ou bundle client-side.
+
+## ADR 005: Suporte a Modo Claro e Escuro (Light/Dark Theme)
+- **Data**: 2026-10-26
+- **Status**: Aceito
+- **Contexto**: Clientes e operadores de restaurante utilizam a aplicação em diferentes ambientes de iluminação (cozinha, salão à noite, delivery noturno, ambiente externo diurno).
+- **Decisão**: Implementação de `ThemeContext` com persistência em `localStorage`, detecção automática de `prefers-color-scheme` do sistema operacional e estilização integrada via `data-bs-theme="dark"` do Bootstrap 5 + variáveis CSS em HSL/HEX no design system.
+- **Consequência**: Melhoria significativa na ergonomia visual e acessibilidade sem comprometer o contraste dos pratos e fotografias.

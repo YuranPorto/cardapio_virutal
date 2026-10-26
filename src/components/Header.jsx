@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useTheme } from '../context/ThemeContext';
 
 export function Header({
   restaurant,
@@ -11,6 +12,7 @@ export function Header({
 }) {
   const { user, profile, isAdmin, logout, loginAsMockAdmin } = useAuth();
   const { totalCount, setIsDrawerOpen } = useCart();
+  const { isDark, toggleTheme } = useTheme();
 
   return (
     <header className="sticky-top glass-header py-2 py-md-3">
@@ -54,6 +56,16 @@ export function Header({
 
           {/* Ações da Direita */}
           <div className="d-flex align-items-center gap-2">
+            {/* Alternar Tema Claro / Escuro */}
+            <button
+              type="button"
+              className="btn-theme-toggle"
+              onClick={toggleTheme}
+              title={isDark ? 'Mudar para Modo Claro' : 'Mudar para Modo Escuro'}
+              aria-label="Alternar tema claro e escuro"
+            >
+              <i className={`bi ${isDark ? 'bi-sun-fill text-warning' : 'bi-moon-stars-fill text-primary'}`}></i>
+            </button>
             {/* Alternar Painel Admin */}
             {(isAdmin || !user) && (
               <button

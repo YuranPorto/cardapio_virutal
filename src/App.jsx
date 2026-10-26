@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider, useCart } from './context/CartContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { restaurantService } from './services/restaurantService';
 import { catalogService } from './services/catalogService';
 import { Header } from './components/Header';
@@ -211,10 +212,12 @@ function MainApp() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <CartProvider>
-        <MainApp />
-      </CartProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <CartProvider>
+          <MainApp />
+        </CartProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
