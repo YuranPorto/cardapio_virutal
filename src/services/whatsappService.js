@@ -1,0 +1,113 @@
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+
+export const whatsappService = {
+  formatPhoneNumber(phone) {
+    if (!phone) return '';
+    const clean = phone.replace(/\D/g, '');
+    // Se não tiver código de país DDI (ex: 55 para Brasil), adiciona 55
+    if (clean.length === 10 || clean.length === 11) {
+      return `55${clean}`;
+    }
+    return clean;
+  },
+
+  formatCurrency(value) {
+    return Number(value || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+  },
+
+  getStatusLabel(status) {
+    const map = {
+      pending: '🟡 Pedido Recebido (Aguardando Confirmação)',
+      confirmed: '🔵 Pedido Confirmado pelo Restaurante',
+      preparing: '👨‍🍳 Em Preparo na Cozinha',
+      out_for_delivery: '🛵 Saiu para Entrega',
+      delivered: '✅ Entregue com Sucesso',
+      cancelled: '❌ Pedido Cancelado',
+    };
+    return map[status] || status;
+  },
+
+  buildCustomerNotificationText(order, restaurantName, status = null) {
+    const currentStatus = status || order.status;
+    const itemsFormatted = (order.items || order.order_items || [])
+      .map((item) => `• ${item.quantity}x ${item.dish_name || item.name} (${this.formatCurrency(item.subtotal || (item.unit_price * item.quantity))})${item.notes ? `\n   Obs: _${item.notes}_` : ''}`)
+      .join('\n');
+
+    const address = order.delivery_address || {};
+    const addressStr = `${address.street || ''}, ${address.number || ''} ${address.complement ? `(${address.complement})` : ''} - ${address.neighborhood || ''}, ${address.city || ''}`;
+
+    return `Olá, *${order.customer_name}*!\n\n` +
+      `Seu pedido *#${order.order_number || order.id?.substring(0, 5) || '1'}* no *${restaurantName}* foi atualizado!\n\n` +
+      `*Status Atual:* ${this.getStatusLabel(currentStatus)}\n\n` +
+      `*Itens:* \n${itemsFormatted}\n\n` +
+      `*Taxa de Entrega:* ${this.formatCurrency(order.delivery_fee)}\n` +
+      `*Valor Total:* *${this.formatCurrency(order.total_amount)}*\n\n` +
+      `*Endereço de Entrega:* \n📍 ${addressStr}\n\n` +
+      `Agradecemos a sua preferência! Qualquer dúvida, basta responder a esta mensagem.`;
+  },
+
+  buildAdminNotificationText(order, restaurantName) {
+    const itemsFormatted = (order.items || order.order_items || [])
+      .map((item) => `• ${item.quantity}x ${item.dish_name || item.name} (${this.formatCurrency(item.subtotal || (item.unit_price * item.quantity))})${item.notes ? `\n   Obs: _${item.notes}_` : ''}`)
+      .join('\n');
+
+    const address = order.delivery_address || {};
+    const addressStr = `${address.street || ''}, ${address.number || ''} ${address.complement ? `(${address.complement})` : ''} - ${address.neighborhood || ''}, ${address.city || ''}`;
+
+    const paymentMap = {
+      pix: 'PIX (Chave enviada)',
+      cash_on_delivery: 'Dinheiro na Entrega',
+      card_on_delivery: 'Cartão na Entrega (Maquininha)',
+      online: 'Pagamento Online',
+      order_only: 'Apenas Encomenda',
+    };
+
+    return `🔔 *NOVO PEDIDO RECEBIDO!* [${restaurantName}]\n\n` +
+      `*Pedido:* #${order.order_number || order.id?.substring(0, 5) || '1'}\n` +
+      `*Cliente:* ${order.customer_name}\n` +
+      `*WhatsApp do Cliente:* ${order.customer_phone}\n\n` +
+      `*Itens Solicitados:*\n${itemsFormatted}\n\n` +
+      `*Subtotal:* ${this.formatCurrency(order.subtotal)}\n` +
+      `*Taxa de Entrega:* ${this.formatCurrency(order.delivery_fee)}\n` +
+      `*Total a Receber:* *${this.formatCurrency(order.total_amount)}*\n` +
+      `*Forma de Pagamento:* ${paymentMap[order.payment_method] || order.payment_method}\n\n` +
+      `*Local de Entrega:*\n📍 ${addressStr}\n` +
+      (order.notes ? `\n📝 *Observações:* ${order.notes}\n` : '') +
+      `\nClique para responder o cliente: https://wa.me/${this.formatPhoneNumber(order.customer_phone)}`;
+  },
+
+  getWhatsAppLink(phone, message) {
+    const formattedPhone = this.formatPhoneNumber(phone);
+    const encoded = encodeURIComponent(message);
+    return `https://wa.me/${formattedPhone}?text=${encoded}`;
+  },
+
+  openWhatsApp(phone, message) {
+    const url = this.getWhatsAppLink(phone, message);
+    window.open(url, '_blank');
+  },
+
+  async triggerEdgeFunctionNotification(orderId, recipientType = 'both', newStatus = null) {
+    if (!isSupabaseConfigured) return null;
+
+    try {
+      const { data, error } = await supabase.functions.invoke('send-whatsapp-notification', {
+        body: {
+          order_id: orderId,
+          recipient_type: recipientType,
+          new_status: newStatus,
+        },
+      });
+
+      if (!error && data?.success) {
+        return data;
+      }
+    } catch (err) {
+      console.warn('Edge function WhatsApp indisponível no momento:', err);
+    }
+    return null;
+  },
+};
