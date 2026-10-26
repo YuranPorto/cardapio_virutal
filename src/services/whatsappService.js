@@ -79,6 +79,14 @@ export const whatsappService = {
       `\nClique para responder o cliente: https://wa.me/${this.formatPhoneNumber(order.customer_phone)}`;
   },
 
+  buildTestNotificationText(restaurantName, status = 'preparing') {
+    return `🧪 *TESTE DE INTEGRAÇÃO WHATSAPP* [${restaurantName}]\n\n` +
+      `Esta é uma mensagem de teste para validação do sistema de notificações.\n` +
+      `*Status Simulado:* ${this.getStatusLabel(status)}\n` +
+      `*Horário do Envio:* ${new Date().toLocaleTimeString('pt-BR')}\n\n` +
+      `Se você recebeu esta mensagem, as notificações do cardápio virtual estão funcionando com 100% de precisão! ✅`;
+  },
+
   getWhatsAppLink(phone, message) {
     const formattedPhone = this.formatPhoneNumber(phone);
     const encoded = encodeURIComponent(message);
@@ -87,7 +95,34 @@ export const whatsappService = {
 
   openWhatsApp(phone, message) {
     const url = this.getWhatsAppLink(phone, message);
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
+  },
+
+  async copyToClipboard(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) {
+      console.warn('Clipboard API não disponível:', e);
+    }
+    // Fallback com textarea
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      textArea.remove();
+      return true;
+    } catch {
+      textArea.remove();
+      return false;
+    }
   },
 
   async triggerEdgeFunctionNotification(orderId, recipientType = 'both', newStatus = null) {
@@ -110,4 +145,29 @@ export const whatsappService = {
     }
     return null;
   },
+
+  async sendDirectViaGateway(gatewayUrl, gatewayToken, phone, message) {
+    if (!gatewayUrl || !gatewayToken) return { success: false, error: 'Gateway não configurado' };
+
+    try {
+      const formattedPhone = this.formatPhoneNumber(phone);
+      const res = await fetch(`${gatewayUrl}/send-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${gatewayToken}`,
+        },
+        body: JSON.stringify({
+          phone: formattedPhone,
+          message: message,
+        }),
+      });
+
+      const json = await res.json();
+      return { success: res.ok, data: json };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
 };
+

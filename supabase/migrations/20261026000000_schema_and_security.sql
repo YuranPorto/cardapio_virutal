@@ -169,17 +169,27 @@ CREATE TABLE IF NOT EXISTS public.order_status_logs (
 -- Trigger para sincronizar criação de usuário no auth.users para public.profiles
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+    assigned_role TEXT;
 BEGIN
+    -- Se o e-mail for yuranporto@gmail.com, recebe role 'admin' automaticamente
+    IF (LOWER(COALESCE(NEW.email, '')) = 'yuranporto@gmail.com') THEN
+        assigned_role := 'admin';
+    ELSE
+        assigned_role := COALESCE(NEW.raw_user_meta_data->>'role', 'customer');
+    END IF;
+
     INSERT INTO public.profiles (id, full_name, phone, role)
     VALUES (
         NEW.id,
         COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', ''),
         COALESCE(NEW.raw_user_meta_data->>'phone', ''),
-        COALESCE(NEW.raw_user_meta_data->>'role', 'customer')
+        assigned_role
     )
     ON CONFLICT (id) DO UPDATE
     SET 
         full_name = EXCLUDED.full_name,
+        role = CASE WHEN LOWER(COALESCE(NEW.email, '')) = 'yuranporto@gmail.com' THEN 'admin' ELSE public.profiles.role END,
         phone = CASE WHEN public.profiles.phone = '' THEN EXCLUDED.phone ELSE public.profiles.phone END;
     RETURN NEW;
 END;
@@ -224,18 +234,23 @@ ALTER TABLE public.order_status_logs ENABLE ROW LEVEL SECURITY;
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
-    RETURN EXISTS (
-        SELECT 1 FROM public.profiles
-        WHERE id = auth.uid() AND role = 'admin'
+    RETURN (
+        (auth.jwt() ->> 'email') = 'yuranporto@gmail.com'
+        OR EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 1. RESTAURANTS: Leitura pública, modificação apenas por admin
+DROP POLICY IF EXISTS "Restaurante visível publicamente" ON public.restaurants;
 CREATE POLICY "Restaurante visível publicamente"
     ON public.restaurants FOR SELECT
     USING (true);
 
+DROP POLICY IF EXISTS "Admin pode gerenciar configurações do restaurante" ON public.restaurants;
 CREATE POLICY "Admin pode gerenciar configurações do restaurante"
     ON public.restaurants FOR ALL
     TO authenticated
@@ -243,10 +258,12 @@ CREATE POLICY "Admin pode gerenciar configurações do restaurante"
     WITH CHECK (public.is_admin());
 
 -- 2. CATEGORIES: Leitura pública dos itens ativos (ou tudo para admin), modificação apenas por admin
+DROP POLICY IF EXISTS "Categorias ativas visíveis publicamente" ON public.categories;
 CREATE POLICY "Categorias ativas visíveis publicamente"
     ON public.categories FOR SELECT
     USING (active = true OR public.is_admin());
 
+DROP POLICY IF EXISTS "Admin pode gerenciar categorias" ON public.categories;
 CREATE POLICY "Admin pode gerenciar categorias"
     ON public.categories FOR ALL
     TO authenticated
@@ -254,10 +271,12 @@ CREATE POLICY "Admin pode gerenciar categorias"
     WITH CHECK (public.is_admin());
 
 -- 3. DISHES: Leitura pública dos pratos ativos (ou tudo para admin), modificação apenas por admin
+DROP POLICY IF EXISTS "Pratos ativos visíveis publicamente" ON public.dishes;
 CREATE POLICY "Pratos ativos visíveis publicamente"
     ON public.dishes FOR SELECT
     USING (active = true OR public.is_admin());
 
+DROP POLICY IF EXISTS "Admin pode gerenciar pratos" ON public.dishes;
 CREATE POLICY "Admin pode gerenciar pratos"
     ON public.dishes FOR ALL
     TO authenticated
@@ -265,11 +284,13 @@ CREATE POLICY "Admin pode gerenciar pratos"
     WITH CHECK (public.is_admin());
 
 -- 4. PROFILES: Usuário pode ler e alterar seu próprio perfil; Admin pode ler perfis para atendimento
+DROP POLICY IF EXISTS "Usuário acessa próprio perfil" ON public.profiles;
 CREATE POLICY "Usuário acessa próprio perfil"
     ON public.profiles FOR SELECT
     TO authenticated
     USING (id = auth.uid() OR public.is_admin());
 
+DROP POLICY IF EXISTS "Usuário atualiza próprio perfil" ON public.profiles;
 CREATE POLICY "Usuário atualiza próprio perfil"
     ON public.profiles FOR UPDATE
     TO authenticated
@@ -277,29 +298,32 @@ CREATE POLICY "Usuário atualiza próprio perfil"
     WITH CHECK (id = auth.uid());
 
 -- 5. CUSTOMER_ADDRESSES: Isolado por usuário
+DROP POLICY IF EXISTS "Usuário gerencia seus próprios endereços" ON public.customer_addresses;
 CREATE POLICY "Usuário gerencia seus próprios endereços"
     ON public.customer_addresses FOR ALL
     TO authenticated
     USING (user_id = auth.uid())
     WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Admin pode consultar endereços para despacho de pedidos" ON public.customer_addresses;
 CREATE POLICY "Admin pode consultar endereços para despacho de pedidos"
     ON public.customer_addresses FOR SELECT
     TO authenticated
     USING (public.is_admin());
 
 -- 6. ORDERS:
--- Clientes criam seus pedidos e visualizam somente os seus
--- Admins visualizam e gerenciam todos os pedidos
+DROP POLICY IF EXISTS "Cliente visualiza seus próprios pedidos" ON public.orders;
 CREATE POLICY "Cliente visualiza seus próprios pedidos"
     ON public.orders FOR SELECT
     TO authenticated
     USING (user_id = auth.uid() OR public.is_admin());
 
+DROP POLICY IF EXISTS "Cliente ou visitante pode criar pedido" ON public.orders;
 CREATE POLICY "Cliente ou visitante pode criar pedido"
     ON public.orders FOR INSERT
     WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Admin pode atualizar pedidos e status na fila" ON public.orders;
 CREATE POLICY "Admin pode atualizar pedidos e status na fila"
     ON public.orders FOR UPDATE
     TO authenticated
@@ -307,6 +331,7 @@ CREATE POLICY "Admin pode atualizar pedidos e status na fila"
     WITH CHECK (public.is_admin());
 
 -- 7. ORDER_ITEMS:
+DROP POLICY IF EXISTS "Acesso aos itens do pedido compatível com a ordem" ON public.order_items;
 CREATE POLICY "Acesso aos itens do pedido compatível com a ordem"
     ON public.order_items FOR SELECT
     USING (
@@ -317,11 +342,13 @@ CREATE POLICY "Acesso aos itens do pedido compatível com a ordem"
         )
     );
 
+DROP POLICY IF EXISTS "Permite inserção de itens de pedido no checkout" ON public.order_items;
 CREATE POLICY "Permite inserção de itens de pedido no checkout"
     ON public.order_items FOR INSERT
     WITH CHECK (true);
 
 -- 8. ORDER_STATUS_LOGS:
+DROP POLICY IF EXISTS "Logs visíveis pelo dono do pedido ou admin" ON public.order_status_logs;
 CREATE POLICY "Logs visíveis pelo dono do pedido ou admin"
     ON public.order_status_logs FOR SELECT
     USING (
@@ -342,12 +369,27 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Políticas de acesso ao storage para visualização pública
+DROP POLICY IF EXISTS "Visualização pública de mídias de pratos" ON storage.objects;
 CREATE POLICY "Visualização pública de mídias de pratos"
     ON storage.objects FOR SELECT
     USING (bucket_id IN ('restaurant-assets', 'dishes-images'));
 
+DROP POLICY IF EXISTS "Admin faz upload e gerencia imagens" ON storage.objects;
 CREATE POLICY "Admin faz upload e gerencia imagens"
     ON storage.objects FOR ALL
     TO authenticated
     USING (public.is_admin())
     WITH CHECK (public.is_admin());
+
+-- ==============================================================================
+-- 11. ATRIBUIÇÃO AUTOMÁTICA DO ADMIN PRINCIPAL
+-- ==============================================================================
+DO $$
+BEGIN
+    UPDATE public.profiles
+    SET role = 'admin'
+    WHERE id IN (
+        SELECT id FROM auth.users WHERE LOWER(email) = 'yuranporto@gmail.com'
+    );
+END $$;
+

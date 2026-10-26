@@ -27,16 +27,31 @@ Este guia detalha todo o processo para configurar o **Cardápio Virtual Dinâmic
 4. **Email / Senha**:
    - Certifique-se de que o provedor de Email está ativado.
 
-### 1.3 Promover o Primeiro Usuário a Administrador (Admin)
-Após criar a sua conta de usuário (seja por email ou login social):
-1. Acesse **Authentication** -> **Users** e copie o **User UID** do seu usuário.
-2. Acesse o **SQL Editor** e execute:
+### 1.3 Administrador Master e Liberação de Acesso para Testes de Clientes
+O usuário **`yuranporto@gmail.com`** já está pré-configurado tanto no banco de dados quanto no front-end como **Administrador Master**.
+Ao fazer login com esse e-mail (por senha ou Google), o botão **Painel Admin** surgirá automaticamente no cabeçalho.
+
+#### Como liberar acesso de demonstração administrativa para um cliente interessado:
+1. Peça para a pessoa interessada se cadastrar no site com o e-mail dela (via Google ou convencional).
+2. No **SQL Editor** do Supabase, execute o comando abaixo substituindo pelo e-mail do interessado:
    ```sql
    UPDATE public.profiles
    SET role = 'admin'
-   WHERE id = 'COLE_AQUI_O_UUID_DO_SEU_USUARIO';
+   WHERE id IN (
+       SELECT id FROM auth.users WHERE LOWER(email) = 'email_do_cliente@exemplo.com'
+   );
    ```
-Pronto! Este usuário agora terá acesso liberado ao **Painel Administrativo** da aplicação.
+3. Pronto! Ao recarregar a página, esse cliente passará a ter acesso total ao painel administrativo.
+4. Para revogar o acesso após o término do período de teste:
+   ```sql
+   UPDATE public.profiles
+   SET role = 'customer'
+   WHERE id IN (
+       SELECT id FROM auth.users WHERE LOWER(email) = 'email_do_cliente@exemplo.com'
+   );
+   ```
+
+*Nota de Apresentação em Portfólio*: Todos os botões artificiais de simulação foram removidos da interface pública. Para visitantes e clientes comuns, a aplicação se comporta exatamente como um delivery em produção real, garantindo máxima credibilidade e profissionalismo.
 
 ---
 

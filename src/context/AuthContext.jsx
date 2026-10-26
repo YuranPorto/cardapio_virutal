@@ -90,11 +90,12 @@ export function AuthProvider({ children }) {
     }
 
     // Perfil derivado dos metadados do auth
+    const isMasterAdmin = currentUser.email?.toLowerCase() === 'yuranporto@gmail.com';
     const fallbackProfile = {
       id: currentUser.id,
       full_name: currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email?.split('@')[0] || 'Cliente',
       phone: currentUser.user_metadata?.phone || '',
-      role: currentUser.user_metadata?.role || (currentUser.email === 'admin@cardapio.com' ? 'admin' : 'customer'),
+      role: isMasterAdmin ? 'admin' : (currentUser.user_metadata?.role || 'customer'),
     };
     setProfile(fallbackProfile);
     localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(fallbackProfile));
@@ -250,25 +251,6 @@ export function AuthProvider({ children }) {
     return updatedProfile;
   }
 
-  // Login de Demonstração como Admin com 1 clique para facilidade do usuário
-  function loginAsMockAdmin() {
-    const adminUser = {
-      id: 'admin-master-id',
-      email: 'admin@cardapio.com',
-      user_metadata: { full_name: 'Gerente do Restaurante', phone: '5511999998888', role: 'admin' },
-    };
-    const adminProfile = {
-      id: 'admin-master-id',
-      full_name: 'Gerente do Restaurante',
-      phone: '5511999998888',
-      role: 'admin',
-    };
-    setUser(adminUser);
-    setProfile(adminProfile);
-    localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(adminUser));
-    localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(adminProfile));
-  }
-
   async function logout() {
     if (isSupabaseConfigured) {
       try {
@@ -283,7 +265,9 @@ export function AuthProvider({ children }) {
     localStorage.removeItem(LOCAL_PROFILE_KEY);
   }
 
-  const isAdmin = profile?.role === 'admin';
+  const isAdmin =
+    profile?.role === 'admin' ||
+    user?.email?.toLowerCase() === 'yuranporto@gmail.com';
   const hasPhone = Boolean(profile?.phone && profile.phone.trim().length >= 10);
 
   return (
@@ -297,7 +281,6 @@ export function AuthProvider({ children }) {
         registerWithEmail,
         loginWithEmail,
         loginWithOAuth,
-        loginAsMockAdmin,
         updatePhone,
         logout,
       }}

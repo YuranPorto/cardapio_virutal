@@ -10,7 +10,7 @@ export function Header({
   onToggleAdmin,
   isAdminView,
 }) {
-  const { user, profile, isAdmin, logout, loginAsMockAdmin } = useAuth();
+  const { user, profile, isAdmin, logout } = useAuth();
   const { totalCount, setIsDrawerOpen } = useCart();
   const { isDark, toggleTheme } = useTheme();
 
@@ -66,17 +66,17 @@ export function Header({
             >
               <i className={`bi ${isDark ? 'bi-sun-fill text-warning' : 'bi-moon-stars-fill text-primary'}`}></i>
             </button>
-            {/* Alternar Painel Admin */}
-            {(isAdmin || !user) && (
+            {/* Alternar Painel Admin (Apenas para usuário com role admin autenticado) */}
+            {isAdmin && (
               <button
                 type="button"
-                className={`btn btn-sm ${isAdminView ? 'btn-dark' : 'btn-outline-dark'} d-flex align-items-center gap-1`}
-                onClick={isAdmin ? onToggleAdmin : loginAsMockAdmin}
-                title={isAdmin ? (isAdminView ? 'Ver Cardápio' : 'Abrir Painel Admin') : 'Acessar modo Demonstração Admin'}
+                className={`btn btn-sm ${isAdminView ? 'btn-danger' : 'btn-outline-danger'} d-flex align-items-center gap-1`}
+                onClick={onToggleAdmin}
+                title={isAdminView ? 'Ver Cardápio Público' : 'Abrir Painel Admin'}
               >
-                <i className={`bi ${isAdminView ? 'bi-grid-fill' : 'bi-shield-lock'}`}></i>
+                <i className={`bi ${isAdminView ? 'bi-grid-fill' : 'bi-shield-lock-fill'}`}></i>
                 <span className="d-none d-lg-inline">
-                  {isAdminView ? 'Voltar ao Cardápio' : (isAdmin ? 'Painel Admin' : 'Demo Admin')}
+                  {isAdminView ? 'Ver Cardápio' : 'Painel Admin'}
                 </span>
               </button>
             )}

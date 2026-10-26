@@ -35,3 +35,10 @@
 - **Contexto**: Clientes e operadores de restaurante utilizam a aplicação em diferentes ambientes de iluminação (cozinha, salão à noite, delivery noturno, ambiente externo diurno).
 - **Decisão**: Implementação de `ThemeContext` com persistência em `localStorage`, detecção automática de `prefers-color-scheme` do sistema operacional e estilização integrada via `data-bs-theme="dark"` do Bootstrap 5 + variáveis CSS em HSL/HEX no design system.
 - **Consequência**: Melhoria significativa na ergonomia visual e acessibilidade sem comprometer o contraste dos pratos e fotografias.
+
+## ADR 006: Garantia de Envio de Notificações WhatsApp sem Bloqueio de Popups
+- **Data**: 2026-10-26
+- **Status**: Aceito
+- **Contexto**: Navegadores modernos bloqueiam chamadas `window.open` quando disparadas após operações assíncronas (como requisições de rede ao atualizar status de pedido).
+- **Decisão**: Criação do `WhatsAppNotificationModal` acionado imediatamente após a mudança de status. O envio ocorre por clique direto do operador no botão do modal, garantindo 100% de abertura do WhatsApp Web / App, com prévia formatada da mensagem, botão de cópia e suporte a despacho direto por API de Gateway caso configurada.
+- **Consequência**: Zero bloqueios de popups, transparência total para o operador e validação confiável de que a notificação foi enviada ao cliente.

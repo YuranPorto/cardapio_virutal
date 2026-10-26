@@ -3,6 +3,7 @@ import { catalogService } from '../../services/catalogService';
 import { restaurantService } from '../../services/restaurantService';
 import { orderService } from '../../services/orderService';
 import { whatsappService } from '../../services/whatsappService';
+import { WhatsAppNotificationModal } from './WhatsAppNotificationModal';
 
 export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) {
   const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'catalog' | 'settings'
@@ -43,6 +44,16 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
   const [faviconFile, setFaviconFile] = useState(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
+  // ===================== ESTADOS: NOTIFICAÇÃO E TESTE WHATSAPP =====================
+  const [whatsAppModalOrder, setWhatsAppModalOrder] = useState(null);
+  const [whatsAppModalStatus, setWhatsAppModalStatus] = useState(null);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+
+  // Testador de WhatsApp
+  const [testWhatsAppPhone, setTestWhatsAppPhone] = useState(restaurant?.phone_whatsapp || '5511999998888');
+  const [testWhatsAppStatus, setTestWhatsAppStatus] = useState('preparing');
+  const [testMessageFeedback, setTestMessageFeedback] = useState('');
+
   // Carregar dados iniciais
   useEffect(() => {
     loadAllAdminData();
@@ -73,17 +84,32 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
 
   // ===================== AÇÕES DE PEDIDOS / FILA =====================
   const handleUpdateStatus = async (order, newStatus) => {
-    await orderService.updateOrderStatus(order.id, newStatus, restaurant?.name);
+    // 1. Atualiza no banco/serviço
+    const updated = await orderService.updateOrderStatus(order.id, newStatus, restaurant?.name);
     await loadOrders();
 
-    // Disparar notificação WhatsApp para o cliente
-    const text = whatsappService.buildCustomerNotificationText(order, restaurant?.name, newStatus);
-    whatsappService.openWhatsApp(order.customer_phone, text);
+    // 2. Abre o modal oficial de notificação WhatsApp garantindo disparo 100% confiável
+    setWhatsAppModalOrder(updated || { ...order, status: newStatus });
+    setWhatsAppModalStatus(newStatus);
+    setIsWhatsAppModalOpen(true);
   };
 
   const handleNotifyCustomer = (order) => {
-    const text = whatsappService.buildCustomerNotificationText(order, restaurant?.name);
-    whatsappService.openWhatsApp(order.customer_phone, text);
+    setWhatsAppModalOrder(order);
+    setWhatsAppModalStatus(order.status);
+    setIsWhatsAppModalOpen(true);
+  };
+
+  // Teste de disparo de WhatsApp
+  const handleRunWhatsAppTest = () => {
+    if (!testWhatsAppPhone || testWhatsAppPhone.replace(/\D/g, '').length < 10) {
+      alert('Informe um número de telefone com DDD válido para o teste.');
+      return;
+    }
+    const testMsg = whatsappService.buildTestNotificationText(restaurant?.name, testWhatsAppStatus);
+    whatsappService.openWhatsApp(testWhatsAppPhone, testMsg);
+    setTestMessageFeedback('Disparo iniciado no WhatsApp! Verifique sua janela do WhatsApp Web / App.');
+    setTimeout(() => setTestMessageFeedback(''), 5000);
   };
 
   // ===================== AÇÕES DE CATEGORIAS =====================
@@ -742,6 +768,101 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
                   <div className="form-text small">Número que receberá alertas automáticos de novos pedidos.</div>
                 </div>
 
+                {/* Gateway Opcional (Evolution API, Z-API ou Twilio) */}
+                <div className="col-12 col-md-6">
+                  <label htmlFor="cfgGatewayUrl" className="form-label small fw-bold">
+                    <i className="bi bi-cpu text-info me-1"></i> URL do Gateway WhatsApp (Opcional)
+                  </label>
+                  <input
+                    id="cfgGatewayUrl"
+                    type="text"
+                    className="form-control rounded-3"
+                    placeholder="Ex: https://api.evolution.exemplo.com"
+                    value={settingsForm.whatsapp_api_url || ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, whatsapp_api_url: e.target.value })}
+                  />
+                  <div className="form-text small">Para disparo 100% automático em background (deixe em branco para usar WhatsApp Web gratuito).</div>
+                </div>
+
+                <div className="col-12 col-md-6">
+                  <label htmlFor="cfgGatewayToken" className="form-label small fw-bold">
+                    <i className="bi bi-key text-info me-1"></i> Token do Gateway WhatsApp (Opcional)
+                  </label>
+                  <input
+                    id="cfgGatewayToken"
+                    type="password"
+                    className="form-control rounded-3"
+                    placeholder="••••••••••••••••"
+                    value={settingsForm.whatsapp_api_token || ''}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, whatsapp_api_token: e.target.value })}
+                  />
+                  <div className="form-text small">Token de autorização da sua instância de WhatsApp.</div>
+                </div>
+
+                {/* CARD DE TESTE DE DISPARO DE WHATSAPP */}
+                <div className="col-12">
+                  <div className="p-3 rounded-4 border bg-light shadow-sm">
+                    <div className="d-flex align-items-center gap-2 mb-2">
+                      <div
+                        className="rounded-circle d-flex align-items-center justify-content-center text-white"
+                        style={{ width: '32px', height: '32px', backgroundColor: '#25D366' }}
+                      >
+                        <i className="bi bi-whatsapp"></i>
+                      </div>
+                      <h6 className="fw-bold mb-0">🧪 Validação & Teste de Mensagem WhatsApp</h6>
+                    </div>
+                    <p className="text-muted small mb-3">
+                      Envie uma mensagem de teste para o seu próprio WhatsApp para verificar a formatação de status que os clientes recebem.
+                    </p>
+
+                    {testMessageFeedback && (
+                      <div className="alert alert-success py-2 px-3 small rounded-3 mb-3 d-flex align-items-center gap-2">
+                        <i className="bi bi-check-circle-fill"></i>
+                        <span>{testMessageFeedback}</span>
+                      </div>
+                    )}
+
+                    <div className="row g-2 align-items-end">
+                      <div className="col-12 col-sm-5">
+                        <label className="form-label small text-muted">Telefone para Teste (com DDD)</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm rounded-3"
+                          placeholder="5511999999999"
+                          value={testWhatsAppPhone}
+                          onChange={(e) => setTestWhatsAppPhone(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="col-12 col-sm-4">
+                        <label className="form-label small text-muted">Status do Pedido a Simular</label>
+                        <select
+                          className="form-select form-select-sm rounded-3"
+                          value={testWhatsAppStatus}
+                          onChange={(e) => setTestWhatsAppStatus(e.target.value)}
+                        >
+                          <option value="pending">🟡 Pedido Recebido</option>
+                          <option value="confirmed">🔵 Confirmado pelo Restaurante</option>
+                          <option value="preparing">👨‍🍳 Em Preparo na Cozinha</option>
+                          <option value="out_for_delivery">🛵 Saiu para Entrega</option>
+                          <option value="delivered">✅ Entregue com Sucesso</option>
+                        </select>
+                      </div>
+
+                      <div className="col-12 col-sm-3">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-success w-100 fw-bold d-flex align-items-center justify-content-center gap-1 py-2"
+                          onClick={handleRunWhatsAppTest}
+                        >
+                          <i className="bi bi-send-check-fill"></i>
+                          <span>Testar Disparo</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* 4. Modo de Operação (Com Pagamento ou Somente Encomendas) */}
                 <div className="col-12 col-md-6">
                   <label htmlFor="cfgModeSelect" className="form-label small fw-bold">Modo de Operação do Cardápio</label>
@@ -1041,6 +1162,19 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
           </div>
         </div>
       )}
+
+      {/* ===================== MODAL DE NOTIFICAÇÃO WHATSAPP ===================== */}
+      <WhatsAppNotificationModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => {
+          setIsWhatsAppModalOpen(false);
+          setWhatsAppModalOrder(null);
+          setWhatsAppModalStatus(null);
+        }}
+        order={whatsAppModalOrder}
+        newStatus={whatsAppModalStatus}
+        restaurant={restaurant}
+      />
     </div>
   );
 }
