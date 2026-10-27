@@ -86,24 +86,26 @@ serve(async (req: Request) => {
     const statusText = statusLabels[new_status || order.status] || order.status;
 
     // Mensagem para o cliente
-    const customerMessage = `Olá, *${order.customer_name}*!\n\n` +
-      `Seu pedido *#${order.order_number}* no *${restaurantName}* foi atualizado:\n` +
-      `Status: *${statusText}*\n\n` +
+    const customerMessage = `🧪 *[AMBIENTE DE TESTES / DEMONSTRAÇÃO]*\n\n` +
+      `Olá, *${order.customer_name}*!\n` +
+      `Seu pedido *#${order.order_number}* no *${restaurantName}* foi atualizado:\n\n` +
+      `*Status Atual:* ${statusText}\n\n` +
       `*Itens:* \n${itemsList}\n\n` +
-      `Total: *R$ ${Number(order.total_amount).toFixed(2).replace('.', ',')}*\n` +
-      `Endereço de Entrega: ${order.delivery_address?.street}, ${order.delivery_address?.number} - ${order.delivery_address?.neighborhood}\n\n` +
-      `Agradecemos a sua preferência!`;
+      `*Total:* *R$ ${Number(order.total_amount).toFixed(2).replace('.', ',')}*\n` +
+      `*Endereço de Entrega:* ${order.delivery_address?.street || ''}, ${order.delivery_address?.number || ''} - ${order.delivery_address?.neighborhood || ''}\n\n` +
+      `⚠️ _Aviso: Pedido simulado de portfólio. Não há cobrança real nem entrega de comida._`;
 
     // Mensagem para o admin
-    const adminMessage = `🔔 *NOVA ATUALIZAÇÃO DE PEDIDO!*\n\n` +
-      `Pedido: *#${order.order_number}*\n` +
-      `Cliente: *${order.customer_name}* (${order.customer_phone})\n` +
-      `Status Atual: *${statusText}*\n\n` +
+    const adminMessage = `🧪 *[DEMO ADMIN] NOTIFICAÇÃO DE PEDIDO!* [${restaurantName}]\n\n` +
+      `*Pedido:* #${order.order_number}\n` +
+      `*Cliente:* ${order.customer_name} (${order.customer_phone})\n` +
+      `*Status Atual:* ${statusText}\n\n` +
       `*Itens do Pedido:*\n${itemsList}\n\n` +
-      `Total: *R$ ${Number(order.total_amount).toFixed(2).replace('.', ',')}*\n` +
-      `Forma: ${order.payment_method}\n` +
-      `Endereço: ${order.delivery_address?.street}, ${order.delivery_address?.number} (${order.delivery_address?.neighborhood})\n` +
-      (order.notes ? `Obs: ${order.notes}\n` : "");
+      `*Total:* *R$ ${Number(order.total_amount).toFixed(2).replace('.', ',')}*\n` +
+      `*Forma de Pagamento:* ${order.payment_method}\n` +
+      `*Endereço:* ${order.delivery_address?.street || ''}, ${order.delivery_address?.number || ''} (${order.delivery_address?.neighborhood || ''})\n` +
+      (order.notes ? `*Obs:* ${order.notes}\n` : "") +
+      `\n⚠️ _Transação simulada para fins de demonstração._`;
 
     // Envio externo com gateway (Evolution API, Z-API, etc.)
     const gatewayUrl = (Deno.env.get("WHATSAPP_GATEWAY_URL") || "").replace(/\/+$/, "");

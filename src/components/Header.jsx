@@ -38,6 +38,9 @@ export function Header({
             <div>
               <div className="d-flex align-items-center gap-2">
                 <h1 className="h5 mb-0 fw-bold">{restaurant?.name || 'Cardápio Virtual'}</h1>
+                <span className="badge bg-warning text-dark px-2 py-0 rounded-pill fw-bold" style={{ fontSize: '0.65rem' }}>
+                  DEMO
+                </span>
                 <span
                   className={`badge rounded-pill ${
                     restaurant?.is_open ? 'bg-success' : 'bg-secondary'

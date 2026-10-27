@@ -5,6 +5,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { restaurantService } from './services/restaurantService';
 import { catalogService } from './services/catalogService';
 import { Header } from './components/Header';
+import { DemoBanner } from './components/DemoBanner';
 import { CategoryFilter } from './components/CategoryFilter';
 import { DishCard } from './components/DishCard';
 import { DishModal } from './components/DishModal';
@@ -79,6 +80,9 @@ function MainApp() {
 
   return (
     <div className="d-flex flex-column min-vh-100 bg-main">
+      {/* Banner de Ambiente de Demonstração */}
+      <DemoBanner />
+
       {/* Topo / Header */}
       <Header
         restaurant={restaurant}
@@ -159,16 +163,18 @@ function MainApp() {
       {!isAdminView && (
         <footer className="bg-white border-top py-4 mt-auto">
           <div className="container text-center">
+            <div className="badge bg-warning text-dark px-3 py-1 rounded-pill fw-bold mb-2">
+              <i className="bi bi-shield-exclamation me-1"></i> AMBIENTE DE DEMONSTRAÇÃO E TESTES
+            </div>
+            <p className="small text-muted mb-2" style={{ maxWidth: '640px', margin: '0 auto', fontSize: '0.8rem' }}>
+              Este cardápio é uma aplicação interativa desenvolvida para apresentação técnica e portfólio.
+              Todos os pedidos, pagamentos e rastreamentos são fictícios. Nenhuma cobrança financeira real é realizada.
+            </p>
             <div className="d-flex align-items-center justify-content-center gap-2 mb-2">
               <span className="fw-bold">{restaurant?.name}</span>
               <span className="text-muted">•</span>
-              <small className="text-muted">Cardápio Virtual Dinâmico</small>
+              <small className="text-muted">Cardápio Virtual White-Label</small>
             </div>
-            {restaurant?.phone_whatsapp && (
-              <small className="text-muted d-block mb-2">
-                Atendimento via WhatsApp: <strong>{restaurant.phone_whatsapp}</strong>
-              </small>
-            )}
             <small className="text-muted" style={{ fontSize: '0.75rem' }}>
               © {new Date().getFullYear()} Todos os direitos reservados.
             </small>

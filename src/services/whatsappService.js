@@ -45,14 +45,15 @@ export const whatsappService = {
     const address = order.delivery_address || {};
     const addressStr = `${address.street || ''}, ${address.number || ''} ${address.complement ? `(${address.complement})` : ''} - ${address.neighborhood || ''}, ${address.city || ''}`;
 
-    return `Olá, *${order.customer_name}*!\n\n` +
+    return `🧪 *[AMBIENTE DE TESTES / DEMONSTRAÇÃO]*\n\n` +
+      `Olá, *${order.customer_name}*!\n` +
       `Seu pedido *#${order.order_number || order.id?.substring(0, 5) || '1'}* no *${restaurantName}* foi atualizado!\n\n` +
       `*Status Atual:* ${this.getStatusLabel(currentStatus)}\n\n` +
       `*Itens:* \n${itemsFormatted}\n\n` +
       `*Taxa de Entrega:* ${this.formatCurrency(order.delivery_fee)}\n` +
       `*Valor Total:* *${this.formatCurrency(order.total_amount)}*\n\n` +
       `*Endereço de Entrega:* \n📍 ${addressStr}\n\n` +
-      `Agradecemos a sua preferência! Qualquer dúvida, basta responder a esta mensagem.`;
+      `⚠️ _Aviso: Este é um projeto de demonstração e portfólio. Não há cobrança financeira real e nenhum produto físico será entregue._`;
   },
 
   buildAdminNotificationText(order, restaurantName) {
@@ -71,7 +72,7 @@ export const whatsappService = {
       order_only: 'Apenas Encomenda',
     };
 
-    return `🔔 *NOVO PEDIDO RECEBIDO!* [${restaurantName}]\n\n` +
+    return `🧪 *[DEMO ADMIN] NOVO PEDIDO RECEBIDO!* [${restaurantName}]\n\n` +
       `*Pedido:* #${order.order_number || order.id?.substring(0, 5) || '1'}\n` +
       `*Cliente:* ${order.customer_name}\n` +
       `*WhatsApp do Cliente:* ${order.customer_phone}\n\n` +
@@ -82,7 +83,8 @@ export const whatsappService = {
       `*Forma de Pagamento:* ${paymentMap[order.payment_method] || order.payment_method}\n\n` +
       `*Local de Entrega:*\n📍 ${addressStr}\n` +
       (order.notes ? `\n📝 *Observações:* ${order.notes}\n` : '') +
-      `\nClique para responder o cliente: https://wa.me/${this.formatPhoneNumber(order.customer_phone)}`;
+      `\n⚠️ _Ambiente de Demonstração - Transação simulada._\n` +
+      `Responder cliente: https://wa.me/${this.formatPhoneNumber(order.customer_phone)}`;
   },
 
   buildTestNotificationText(restaurantName, status = 'preparing') {

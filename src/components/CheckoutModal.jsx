@@ -555,6 +555,17 @@ export function CheckoutModal({
                       onChange={(e) => setNotes(e.target.value)}
                     ></textarea>
                   </div>
+
+                  {/* Alerta de Ambiente de Demonstração */}
+                  <div className="alert alert-warning border-0 rounded-3 p-3 mt-3 mb-0 d-flex align-items-start gap-2 shadow-sm">
+                    <i className="bi bi-shield-exclamation text-warning fs-4 flex-shrink-0 mt-1"></i>
+                    <div>
+                      <div className="fw-bold text-dark">⚠️ AMBIENTE DE TESTES / DEMONSTRAÇÃO</div>
+                      <div className="small text-muted" style={{ fontSize: '0.82rem' }}>
+                        Este é um projeto de demonstração e portfólio. <strong>Nenhum valor real será cobrado</strong> e <strong>nenhum produto será entregue</strong>. Você receberá uma notificação real no WhatsApp informado para testar a integração.
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Resumo de Valores e Botão Confirmar */}
