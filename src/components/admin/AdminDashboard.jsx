@@ -3,6 +3,7 @@ import { catalogService } from '../../services/catalogService';
 import { restaurantService } from '../../services/restaurantService';
 import { orderService } from '../../services/orderService';
 import { whatsappService } from '../../services/whatsappService';
+import { notificationSoundService } from '../../services/notificationSoundService';
 import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
 
 export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) {
@@ -12,6 +13,7 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
   const [orders, setOrders] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [soundAlertEnabled, setSoundAlertEnabled] = useState(() => notificationSoundService.isSoundEnabled());
 
   // ===================== ESTADOS: CARDÁPIO (CATEGORIAS E PRATOS) =====================
   const [categories, setCategories] = useState([]);
@@ -44,6 +46,46 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
   const [faviconFile, setFaviconFile] = useState(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
+  // ===================== ESTADOS: COMPRESSÃO DE IMAGENS (BROWSER WEBP) =====================
+  const [dishCompressionStats, setDishCompressionStats] = useState(null);
+  const [logoCompressionStats, setLogoCompressionStats] = useState(null);
+  const [faviconCompressionStats, setFaviconCompressionStats] = useState(null);
+  const [isCompressing, setIsCompressing] = useState(false);
+
+  // Handlers de compressão de imagens no próprio navegador
+  const handleDishImageChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsCompressing(true);
+    const result = await catalogService.compressImage(file);
+    setDishImageFile(result.file);
+    setDishCompressionStats(result);
+    setIsCompressing(false);
+  };
+
+  const handleLogoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsCompressing(true);
+    const result = await catalogService.compressImage(file);
+    setLogoFile(result.file);
+    setLogoCompressionStats(result);
+    setIsCompressing(false);
+  };
+
+  const handleFaviconChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsCompressing(true);
+    const result = await catalogService.compressImage(file, { maxWidthOrHeight: 128 });
+    setFaviconFile(result.file);
+    setFaviconCompressionStats(result);
+    setIsCompressing(false);
+  };
+
   // ===================== ESTADOS: NOTIFICAÇÃO ADMIN E GATEWAY =====================
   const [qrCodeImage, setQrCodeImage] = useState(null);
   const [loadingQr, setLoadingQr] = useState(false);
@@ -58,29 +100,52 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
   useEffect(() => {
     loadAllAdminData();
 
-    // Supabase Realtime: sincroniza a fila de pedidos automaticamente sem recarregar a tela
+    // Supabase Realtime: escuta EXCLUSIVAMENTE novos pedidos criados por clientes (INSERT)
+    // Atualizações de dados (status, edições) NÃO geram tráfego Realtime no admin, pois o painel se atualiza localmente (otimista).
+    // Isso poupa conexões e evita peso desnecessário no banco de dados.
     let channel = null;
     if (isSupabaseConfigured) {
       channel = supabase
-        .channel(`admin-orders-live-${Date.now()}`)
+        .channel(`admin-new-orders-${Date.now()}`)
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'orders' },
-          () => {
+          { event: 'INSERT', schema: 'public', table: 'orders' },
+          async (payload) => {
+            // Toca som melódico de novo pedido via Web Audio API do navegador (sem download de MP3)
+            notificationSoundService.playNewOrderAlert();
+
+            if (payload?.new?.id) {
+              // Busca estritamente o pedido recém-criado, sem recarregar toda a tabela do banco
+              const newOrder = await orderService.getOrderById(payload.new.id);
+              if (newOrder) {
+                setOrders((prev) => {
+                  if (prev.some((o) => o.id === newOrder.id)) return prev;
+                  return [newOrder, ...prev];
+                });
+                return;
+              }
+            }
             loadOrders();
           }
         )
         .subscribe();
     }
 
-    const interval = setInterval(loadOrders, 15000);
     return () => {
-      clearInterval(interval);
       if (channel && isSupabaseConfigured) {
         supabase.removeChannel(channel);
       }
     };
   }, []);
+
+  const handleToggleSound = () => {
+    const nextVal = !soundAlertEnabled;
+    setSoundAlertEnabled(nextVal);
+    notificationSoundService.setSoundEnabled(nextVal);
+    if (nextVal) {
+      notificationSoundService.testAlert();
+    }
+  };
 
   const loadAllAdminData = async () => {
     await Promise.all([loadOrders(), loadCatalog()]);
@@ -105,9 +170,13 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
 
   // ===================== AÇÕES DE PEDIDOS / FILA =====================
   const handleUpdateStatus = async (order, newStatus) => {
-    // Atualiza no banco/serviço (propagação instantânea em tempo real para a tela do cliente)
+    // 1. Atualização OTIMISTA local no estado (zero latência e sem refetch desnecessário no banco)
+    setOrders((prev) =>
+      prev.map((o) => (o.id === order.id ? { ...o, status: newStatus, updated_at: new Date().toISOString() } : o))
+    );
+
+    // 2. Persiste a alteração no banco (o evento UPDATE é propagado via Realtime para a tela do cliente)
     await orderService.updateOrderStatus(order.id, newStatus, restaurant);
-    await loadOrders();
   };
 
   // Teste de disparo de WhatsApp
@@ -171,6 +240,7 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
 
       setShowDishModal(false);
       setDishImageFile(null);
+      setDishCompressionStats(null);
       setDishForm({
         id: null,
         name: '',
@@ -242,14 +312,38 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
             <span className="badge bg-danger fs-6 py-2 px-3">ADMIN</span>
             <h4 className="mb-0 fw-bold">Painel de Gestão do Restaurante</h4>
           </div>
-          <button
-            type="button"
-            className="btn btn-outline-light btn-sm d-flex align-items-center gap-1"
-            onClick={onExitAdmin}
-          >
-            <i className="bi bi-box-arrow-left"></i>
-            <span>Voltar ao Cardápio Público</span>
-          </button>
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <button
+              type="button"
+              className={`btn btn-sm d-flex align-items-center gap-1 ${
+                soundAlertEnabled ? 'btn-outline-warning' : 'btn-outline-secondary'
+              }`}
+              onClick={handleToggleSound}
+              title={soundAlertEnabled ? 'Alertas sonoros ativados (Web Audio API)' : 'Alertas sonoros silenciados'}
+            >
+              <i className={`bi ${soundAlertEnabled ? 'bi-volume-up-fill' : 'bi-volume-mute-fill'}`}></i>
+              <span>{soundAlertEnabled ? 'Som Ativo' : 'Som Mudo'}</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-outline-info btn-sm d-flex align-items-center gap-1"
+              onClick={() => notificationSoundService.testAlert()}
+              title="Testar som melódico sintetizado via Web Audio API"
+            >
+              <i className="bi bi-bell-fill"></i>
+              <span>Testar Som</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-outline-light btn-sm d-flex align-items-center gap-1"
+              onClick={onExitAdmin}
+            >
+              <i className="bi bi-box-arrow-left"></i>
+              <span>Voltar ao Cardápio Público</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -728,18 +822,24 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
                   ></textarea>
                 </div>
 
-                {/* 2. Logos e Favicons */}
+                {/* 2. Logos e Favicons com Otimização Automática */}
                 <div className="col-12 col-md-6">
                   <label htmlFor="cfgLogoFile" className="form-label small fw-bold">
-                    <i className="bi bi-image me-1"></i> Logotipo da Loja
+                    <i className="bi bi-image me-1"></i> Logotipo da Loja (Otimizado WebP)
                   </label>
                   <input
                     id="cfgLogoFile"
                     type="file"
                     className="form-control rounded-3 mb-2"
                     accept="image/*"
-                    onChange={(e) => setLogoFile(e.target.files[0])}
+                    onChange={handleLogoChange}
                   />
+                  {logoCompressionStats && (
+                    <div className="alert alert-success py-1 px-2 small rounded-3 mb-2 d-flex align-items-center justify-content-between" style={{ fontSize: '0.75rem' }}>
+                      <span>Otimizado: {logoCompressionStats.originalFormatted} ➔ <strong>{logoCompressionStats.compressedFormatted}</strong> (-{logoCompressionStats.savedPercentage}%)</span>
+                      <img src={logoCompressionStats.previewUrl} alt="Logo" className="rounded" style={{ width: '28px', height: '28px', objectFit: 'cover' }} />
+                    </div>
+                  )}
                   <input
                     type="text"
                     className="form-control form-control-sm rounded-3"
@@ -758,8 +858,14 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
                     type="file"
                     className="form-control rounded-3 mb-2"
                     accept="image/*"
-                    onChange={(e) => setFaviconFile(e.target.files[0])}
+                    onChange={handleFaviconChange}
                   />
+                  {faviconCompressionStats && (
+                    <div className="alert alert-success py-1 px-2 small rounded-3 mb-2 d-flex align-items-center justify-content-between" style={{ fontSize: '0.75rem' }}>
+                      <span>Otimizado: {faviconCompressionStats.originalFormatted} ➔ <strong>{faviconCompressionStats.compressedFormatted}</strong></span>
+                      <img src={faviconCompressionStats.previewUrl} alt="Favicon" className="rounded" style={{ width: '28px', height: '28px', objectFit: 'cover' }} />
+                    </div>
+                  )}
                   <input
                     type="text"
                     className="form-control form-control-sm rounded-3"
@@ -767,6 +873,52 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
                     value={settingsForm.favicon_url || ''}
                     onChange={(e) => setSettingsForm({ ...settingsForm, favicon_url: e.target.value })}
                   />
+                </div>
+
+                {/* CARD DE CONFIGURAÇÃO CLOUDFLARE R2 */}
+                <div className="col-12">
+                  <div className="p-3 rounded-4 border bg-white shadow-sm">
+                    <div className="d-flex align-items-center gap-2 mb-2">
+                      <div
+                        className="rounded-circle d-flex align-items-center justify-content-center text-white"
+                        style={{ width: '36px', height: '36px', backgroundColor: '#F38020' }}
+                      >
+                        <i className="bi bi-cloud-arrow-up-fill fs-5"></i>
+                      </div>
+                      <div>
+                        <h6 className="fw-bold mb-0">Armazenamento de Imagens: Cloudflare R2</h6>
+                        <small className="text-muted">Zero custo de saída de tráfego com compressão WebP de 800px no navegador</small>
+                      </div>
+                    </div>
+
+                    <div className="row g-2 mt-1">
+                      <div className="col-12 col-md-6">
+                        <label htmlFor="cfgR2PublicDomain" className="form-label small fw-bold">Domínio Público do R2 / CDN</label>
+                        <input
+                          id="cfgR2PublicDomain"
+                          type="text"
+                          className="form-control rounded-3"
+                          placeholder="Ex: https://pub-xxxxxx.r2.dev ou https://cdn.meusite.com"
+                          value={settingsForm.r2_public_domain || ''}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, r2_public_domain: e.target.value })}
+                        />
+                        <div className="form-text small">URL base pública do bucket Cloudflare R2 para servir as fotos.</div>
+                      </div>
+
+                      <div className="col-12 col-md-6">
+                        <label htmlFor="cfgR2Endpoint" className="form-label small fw-bold">Endpoint de Upload / Worker (Opcional)</label>
+                        <input
+                          id="cfgR2Endpoint"
+                          type="text"
+                          className="form-control rounded-3"
+                          placeholder="Ex: https://upload-r2.meudominio.workers.dev"
+                          value={settingsForm.r2_upload_endpoint || ''}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, r2_upload_endpoint: e.target.value })}
+                        />
+                        <div className="form-text small">Worker ou Edge function para recebimento direto de uploads.</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* 3. Números de WhatsApp */}
@@ -808,6 +960,43 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
                         onChange={(e) => setSettingsForm({ ...settingsForm, notify_admin_whatsapp: e.target.checked })}
                         style={{ width: '2.5rem', height: '1.25rem' }}
                       />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card de Notificação Sonora no Navegador (Web Audio API) */}
+                <div className="col-12">
+                  <div className="p-3 rounded-3 border bg-white shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-3">
+                    <div>
+                      <div className="fw-bold d-flex align-items-center gap-2">
+                        <i className="bi bi-volume-up-fill text-warning"></i>
+                        <span>🔔 Alerta Sonoro de Novo Pedido no Painel (Web Audio API)</span>
+                        <span className="badge bg-warning text-dark py-1 px-2 rounded-pill small">Nativo sem MP3</span>
+                      </div>
+                      <small className="text-muted d-block mt-1">
+                        Sintetiza um sino melódico agradável diretamente pelos alto-falantes do navegador quando um novo pedido entra na fila. Zero downloads de MP3 externos e sem dependência de cache.
+                      </small>
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-info fw-bold d-flex align-items-center gap-1"
+                        onClick={() => notificationSoundService.testAlert()}
+                      >
+                        <i className="bi bi-play-circle-fill"></i>
+                        <span>Ouvir Som</span>
+                      </button>
+                      <div className="form-check form-switch m-0">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          id="switchSoundPref"
+                          checked={soundAlertEnabled}
+                          onChange={handleToggleSound}
+                          style={{ width: '2.5rem', height: '1.25rem' }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1261,15 +1450,43 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
 
                     <div className="col-12">
                       <label htmlFor="dishFormImgFile" className="form-label small fw-bold">
-                        <i className="bi bi-camera me-1"></i> Imagem do Prato
+                        <i className="bi bi-camera me-1"></i> Imagem do Prato (Otimizada para Cloudflare R2)
                       </label>
                       <input
                         id="dishFormImgFile"
                         type="file"
                         className="form-control rounded-3 mb-2"
                         accept="image/*"
-                        onChange={(e) => setDishImageFile(e.target.files[0])}
+                        onChange={handleDishImageChange}
                       />
+
+                      {isCompressing && (
+                        <div className="text-muted small py-1 d-flex align-items-center gap-2">
+                          <span className="spinner-border spinner-border-sm text-primary"></span>
+                          <span>Comprimindo e convertendo para WebP (máx 800px)...</span>
+                        </div>
+                      )}
+
+                      {dishCompressionStats && !isCompressing && (
+                        <div className="alert alert-success py-2 px-3 small rounded-3 mb-2 d-flex align-items-center justify-content-between">
+                          <div className="d-flex align-items-center gap-2">
+                            <i className="bi bi-file-earmark-check-fill text-success fs-5"></i>
+                            <div>
+                              <div className="fw-bold">Foto Otimizada no Navegador (.webp)</div>
+                              <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                Reduzida de {dishCompressionStats.originalFormatted} para <strong>{dishCompressionStats.compressedFormatted}</strong> ({dishCompressionStats.savedPercentage}% de economia em {dishCompressionStats.durationMs}ms)
+                              </div>
+                            </div>
+                          </div>
+                          <img
+                            src={dishCompressionStats.previewUrl}
+                            alt="Prévia WebP"
+                            className="rounded border bg-white"
+                            style={{ width: '40px', height: '40px', objectFit: 'cover' }}
+                          />
+                        </div>
+                      )}
+
                       <input
                         type="text"
                         className="form-control form-control-sm rounded-3"

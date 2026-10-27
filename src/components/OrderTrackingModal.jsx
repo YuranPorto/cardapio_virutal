@@ -23,7 +23,7 @@ export function OrderTrackingModal({ isOpen, onClose, restaurant }) {
         .channel(`tracking-orders-live-${Date.now()}`)
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'orders' },
+          { event: 'UPDATE', schema: 'public', table: 'orders' },
           (payload) => {
             if (payload.new) {
               const updatedRow = payload.new;

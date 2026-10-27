@@ -1,5 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { initialCategories, initialDishes } from './mockData';
+import { imageCompressionService } from './imageCompressionService';
+import { r2StorageService } from './r2StorageService';
 
 const CATEGORIES_KEY = 'cardapio_categories_data';
 const DISHES_KEY = 'cardapio_dishes_data';
@@ -183,36 +185,25 @@ export const catalogService = {
     return true;
   },
 
-  // ===================== UPLOAD DE IMAGENS =====================
-  async uploadImage(file, bucket = 'dishes-images') {
+  // ===================== OTIMIZAÇÃO & UPLOAD DE IMAGENS (CLOUDFLARE R2) =====================
+  /**
+   * Otimiza a foto no navegador antes do upload
+   */
+  async compressImage(file, options = {}) {
+    return await imageCompressionService.compressImage(file, options);
+  },
+
+  /**
+   * Comprime (máx 800px, .webp, 80% qualidade) e envia para Cloudflare R2
+   */
+  async uploadImage(file, folder = 'dishes', restaurantConfig = null) {
     if (!file) return null;
 
-    if (isSupabaseConfigured) {
-      try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-        const filePath = `${fileName}`;
+    // 1. Otimiza no cliente (reduz para máx 800px, converte para WebP, 75%-80% de qualidade)
+    const compressionResult = await imageCompressionService.compressImage(file);
+    const readyFile = compressionResult?.file || file;
 
-        const { error: uploadError } = await supabase.storage
-          .from(bucket)
-          .upload(filePath, file, { cacheControl: '3600', upsert: true });
-
-        if (!uploadError) {
-          const { data: { publicUrl } } = supabase.storage
-            .from(bucket)
-            .getPublicUrl(filePath);
-          return publicUrl;
-        }
-      } catch (err) {
-        console.warn('Falha no upload do Supabase Storage, usando FileReader:', err);
-      }
-    }
-
-    // Fallback: Converte para Base64 Data URL
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.readAsDataURL(file);
-    });
+    // 2. Envia para o Cloudflare R2 (com fallback automático transparente)
+    return await r2StorageService.uploadToR2(readyFile, folder, restaurantConfig);
   },
 };

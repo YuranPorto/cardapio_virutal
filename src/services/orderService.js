@@ -155,6 +155,33 @@ export const orderService = {
     return this.getLocalOrders();
   },
 
+  async getOrderById(orderId) {
+    if (isSupabaseConfigured && orderId) {
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select(`
+            *,
+            order_items (*)
+          `)
+          .eq('id', orderId)
+          .single();
+
+        if (!error && data) {
+          return {
+            ...data,
+            items: data.order_items || [],
+          };
+        }
+      } catch (e) {
+        console.warn('Erro ao buscar pedido pontual no Supabase:', e);
+      }
+    }
+
+    const local = this.getLocalOrders();
+    return local.find((o) => o.id === orderId) || null;
+  },
+
   async updateOrderStatus(orderId, newStatus, restaurant = null) {
     let orders = this.getLocalOrders();
     let targetOrder = null;

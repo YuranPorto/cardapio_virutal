@@ -38,7 +38,32 @@
 
 ## ADR 006: Garantia de Envio de Notificações WhatsApp sem Bloqueio de Popups
 - **Data**: 2026-10-26
+- **Status**: Substituído / Refinado
+- **Contexto**: Navegadores modernos bloqueiam chamadas `window.open` assíncronas.
+- **Decisão Inicial**: Modal de envio semi-automático.
+- **Evolução Atual**: O cliente acompanha o pedido 100% pelo site via Supabase Realtime (dispensando WhatsApp ao cliente). O WhatsApp fica restrito ao alerta automático para o número do restaurante quando configurado.
+
+## ADR 007: Otimização de Realtime no Admin (Apenas INSERT) e Carga Mínima no Banco
+- **Data**: 2026-10-27
 - **Status**: Aceito
-- **Contexto**: Navegadores modernos bloqueiam chamadas `window.open` quando disparadas após operações assíncronas (como requisições de rede ao atualizar status de pedido).
-- **Decisão**: Criação do `WhatsAppNotificationModal` acionado imediatamente após a mudança de status. O envio ocorre por clique direto do operador no botão do modal, garantindo 100% de abertura do WhatsApp Web / App, com prévia formatada da mensagem, botão de cópia e suporte a despacho direto por API de Gateway caso configurada.
-- **Consequência**: Zero bloqueios de popups, transparência total para o operador e validação confiável de que a notificação foi enviada ao cliente.
+- **Contexto**: Quando o painel administrativo altera o status de um pedido (ex: "Aceitar", "Na Cozinha", "Saiu p/ Entrega"), escutar eventos de `UPDATE` geraria um ciclo desnecessário de notificações e requisições adicionais de rede no próprio painel.
+- **Decisão**:
+  1. **Admin escuta EXCLUSIVAMENTE eventos `INSERT`**: O painel só recebe notificações do Supabase Realtime quando um cliente submete um NOVO pedido.
+  2. **Inserção Pontual**: Ao receber o `INSERT`, o frontend busca estritamente o pedido recém-criado via `getOrderById` (1 linha + itens), evitando recarregar toda a tabela de pedidos (`getAllOrders`).
+  3. **Atualização Otimista no Admin**: As transições de status feitas pelo operador atualizam o estado local de forma imediata (sem latência e sem refetch). A alteração é salva no banco e o evento `UPDATE` é consumido apenas pelo cliente na tela de rastreamento.
+  4. **Eliminação de Polling Agressivo**: O polling contínuo a cada 20 segundos foi removido, poupando conexões e CPU do PostgreSQL, mantendo um botão de atualização manual para contingências.
+- **Consequência**: Carga quase nula no banco de dados durante o expediente, sem loops de renderização e resposta instantânea para o operador da cozinha.
+
+## ADR 008: Compressão Client-Side no Navegador (.webp) e Cloudflare R2
+- **Data**: 2026-10-27
+- **Status**: Aceito
+- **Contexto**: Fotos de pratos e logos tiradas com smartphones modernos possuem entre 4 MB e 8 MB, causando lentidão no upload e esgotando cotas de armazenamento e tráfego.
+- **Decisão**: Interceptar o upload no navegador do lojista via `browser-image-compression`, reduzindo largura para máx. 800px, qualidade a 80% e convertendo para `.webp` em background (Web Worker). O arquivo reduzido (~60-80 KB) é despachado para o Cloudflare R2 (sem taxas de tráfego de saída / egress).
+- **Consequência**: Economia de ~98% de armazenamento e tráfego, upload praticamente instantâneo mesmo em redes móveis 3G/4G.
+
+## ADR 009: Notificação Sonora Nativa Sintetizada via Web Audio API
+- **Data**: 2026-10-27
+- **Status**: Aceito
+- **Contexto**: Painéis de gestão de restaurante precisam alertar audivelmente a cozinha sobre novos pedidos. Tradicionalmente, sistemas utilizam arquivos de áudio externos (`.mp3` ou `.wav`), que enfrentam falhas comuns: download lento, problemas de cache HTTP, bloqueios de CORS, ou falta de suporte offline.
+- **Decisão**: Síntese de áudio puramente nativa através da **Web Audio API** do navegador (`AudioContext`, `OscillatorNode` e `GainNode`). Criou-se uma melodia agradável de sino duplo com decaimento exponencial, gerada 100% em tempo de execução via software no próprio aparelho do operador.
+- **Consequência**: Zero dependência de arquivos externos, zero uso de banda ou cache, resposta instantânea em milissegundos e suporte total a alternância de som ativo/mudo com persistência local.
