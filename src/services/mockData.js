@@ -21,6 +21,7 @@ export const initialRestaurantData = {
   whatsapp_api_url: "https://evolution-api-latest-ypge.onrender.com",
   whatsapp_api_token: "cardapio_evolution_secret_2026",
   whatsapp_instance_name: "cardapio_demo",
+  notify_admin_whatsapp: true,
 };
 
 export const initialCategories = [

@@ -208,45 +208,26 @@ export const whatsappService = {
     }
   },
 
-  async notifyOrderCreated(order, restaurant) {
+  async notifyAdminNewOrder(order, restaurant) {
+    // Notifica EXCLUSIVAMENTE o WhatsApp do administrador, caso configurado
+    const isNotifyEnabled = restaurant?.notify_admin_whatsapp !== false;
+    const adminPhone = restaurant?.admin_notification_whatsapp || restaurant?.phone_whatsapp;
+
+    if (!isNotifyEnabled || !adminPhone) {
+      console.log('[WhatsApp] Notificação de novo pedido para admin desabilitada nas configurações.');
+      return;
+    }
+
     const restaurantName = restaurant?.name || 'Cardápio Gourmet';
     const gatewayUrl = restaurant?.whatsapp_api_url || EVOLUTION_CONFIG.url;
     const gatewayToken = restaurant?.whatsapp_api_token || EVOLUTION_CONFIG.token;
     const instanceName = restaurant?.whatsapp_instance_name || EVOLUTION_CONFIG.instance;
 
-    // 1. Mensagem para o cliente
-    if (order?.customer_phone) {
-      const customerMsg = this.buildCustomerNotificationText(order, restaurantName, 'pending');
-      await this.sendDirectViaGateway(gatewayUrl, gatewayToken, order.customer_phone, customerMsg, instanceName);
-    }
-
-    // 2. Mensagem para o admin do restaurante
-    const adminPhone = restaurant?.admin_notification_whatsapp || restaurant?.phone_whatsapp || '5512982096857';
-    if (adminPhone) {
-      const adminMsg = this.buildAdminNotificationText(order, restaurantName);
-      await this.sendDirectViaGateway(gatewayUrl, gatewayToken, adminPhone, adminMsg, instanceName);
-    }
-
-    // 3. Notificar via Edge Function como redundância
-    if (order?.id) {
-      this.triggerEdgeFunctionNotification(order.id, 'both');
-    }
-  },
-
-  async notifyOrderStatusUpdate(order, newStatus, restaurant) {
-    const restaurantName = typeof restaurant === 'object' && restaurant?.name ? restaurant.name : (restaurant || 'Cardápio Gourmet');
-    const gatewayUrl = (typeof restaurant === 'object' && restaurant?.whatsapp_api_url) || EVOLUTION_CONFIG.url;
-    const gatewayToken = (typeof restaurant === 'object' && restaurant?.whatsapp_api_token) || EVOLUTION_CONFIG.token;
-    const instanceName = (typeof restaurant === 'object' && restaurant?.whatsapp_instance_name) || EVOLUTION_CONFIG.instance;
-
-    // Mensagem para o cliente informando a atualização de status
-    if (order?.customer_phone) {
-      const customerMsg = this.buildCustomerNotificationText(order, restaurantName, newStatus);
-      await this.sendDirectViaGateway(gatewayUrl, gatewayToken, order.customer_phone, customerMsg, instanceName);
-    }
+    const adminMsg = this.buildAdminNotificationText(order, restaurantName);
+    await this.sendDirectViaGateway(gatewayUrl, gatewayToken, adminPhone, adminMsg, instanceName);
 
     if (order?.id) {
-      this.triggerEdgeFunctionNotification(order.id, 'customer', newStatus);
+      this.triggerEdgeFunctionNotification(order.id, 'admin');
     }
   },
 

@@ -150,12 +150,9 @@ serve(async (req: Request) => {
         }
       };
 
-      if (recipient_type === "customer" || recipient_type === "both") {
-        await sendViaApi(order.customer_phone, customerMessage);
-        dispatchedCount++;
-      }
-
-      if ((recipient_type === "admin" || recipient_type === "both") && adminWhatsApp) {
+      // Disparo EXCLUSIVO para o WhatsApp do Administrador (quando configurado/habilitado)
+      const isNotifyEnabled = restaurant?.notify_admin_whatsapp !== false;
+      if (isNotifyEnabled && adminWhatsApp) {
         await sendViaApi(adminWhatsApp, adminMessage);
         dispatchedCount++;
       }

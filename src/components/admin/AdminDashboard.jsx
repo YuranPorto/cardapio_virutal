@@ -3,7 +3,7 @@ import { catalogService } from '../../services/catalogService';
 import { restaurantService } from '../../services/restaurantService';
 import { orderService } from '../../services/orderService';
 import { whatsappService } from '../../services/whatsappService';
-import { WhatsAppNotificationModal } from './WhatsAppNotificationModal';
+import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
 
 export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) {
   const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'catalog' | 'settings'
@@ -44,24 +44,42 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
   const [faviconFile, setFaviconFile] = useState(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
-  // ===================== ESTADOS: NOTIFICAÇÃO E TESTE WHATSAPP =====================
-  const [whatsAppModalOrder, setWhatsAppModalOrder] = useState(null);
-  const [whatsAppModalStatus, setWhatsAppModalStatus] = useState(null);
-  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  // ===================== ESTADOS: NOTIFICAÇÃO ADMIN E GATEWAY =====================
   const [qrCodeImage, setQrCodeImage] = useState(null);
   const [loadingQr, setLoadingQr] = useState(false);
   const [qrFeedback, setQrFeedback] = useState('');
 
-  // Testador de WhatsApp
-  const [testWhatsAppPhone, setTestWhatsAppPhone] = useState(restaurant?.phone_whatsapp || '5511999998888');
+  // Testador de WhatsApp do Administrador
+  const [testWhatsAppPhone, setTestWhatsAppPhone] = useState(restaurant?.admin_notification_whatsapp || restaurant?.phone_whatsapp || '5511999998888');
   const [testWhatsAppStatus, setTestWhatsAppStatus] = useState('preparing');
   const [testMessageFeedback, setTestMessageFeedback] = useState('');
 
-  // Carregar dados iniciais
+  // Carregar dados iniciais e escutar atualizações em tempo real (Realtime)
   useEffect(() => {
     loadAllAdminData();
-    const interval = setInterval(loadOrders, 10000);
-    return () => clearInterval(interval);
+
+    // Supabase Realtime: sincroniza a fila de pedidos automaticamente sem recarregar a tela
+    let channel = null;
+    if (isSupabaseConfigured) {
+      channel = supabase
+        .channel(`admin-orders-live-${Date.now()}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'orders' },
+          () => {
+            loadOrders();
+          }
+        )
+        .subscribe();
+    }
+
+    const interval = setInterval(loadOrders, 15000);
+    return () => {
+      clearInterval(interval);
+      if (channel && isSupabaseConfigured) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   const loadAllAdminData = async () => {
@@ -87,20 +105,9 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
 
   // ===================== AÇÕES DE PEDIDOS / FILA =====================
   const handleUpdateStatus = async (order, newStatus) => {
-    // 1. Atualiza no banco/serviço (dispara notificação automática instantânea via WhatsApp)
-    const updated = await orderService.updateOrderStatus(order.id, newStatus, restaurant);
+    // Atualiza no banco/serviço (propagação instantânea em tempo real para a tela do cliente)
+    await orderService.updateOrderStatus(order.id, newStatus, restaurant);
     await loadOrders();
-
-    // 2. Abre o modal oficial de notificação WhatsApp garantindo disparo 100% confiável
-    setWhatsAppModalOrder(updated || { ...order, status: newStatus });
-    setWhatsAppModalStatus(newStatus);
-    setIsWhatsAppModalOpen(true);
-  };
-
-  const handleNotifyCustomer = (order) => {
-    setWhatsAppModalOrder(order);
-    setWhatsAppModalStatus(order.status);
-    setIsWhatsAppModalOpen(true);
   };
 
   // Teste de disparo de WhatsApp
@@ -432,15 +439,25 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
                             )}
                           </div>
 
-                          {/* Notificar no WhatsApp */}
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-success w-100 d-flex align-items-center justify-content-center gap-1"
-                            onClick={() => handleNotifyCustomer(ord)}
-                          >
-                            <i className="bi bi-whatsapp"></i>
-                            <span>Notificar Cliente via WhatsApp</span>
-                          </button>
+                          {/* Status de Acompanhamento ao Vivo do Cliente */}
+                          <div className="d-flex align-items-center justify-content-between pt-1">
+                            <span className="small text-muted d-flex align-items-center gap-1" style={{ fontSize: '0.78rem' }}>
+                              <span className="spinner-grow spinner-grow-sm text-success" style={{ width: '6px', height: '6px' }}></span>
+                              <span>Atualizado em tempo real para o cliente</span>
+                            </span>
+                            {ord.customer_phone && (
+                              <a
+                                href={`https://wa.me/${whatsappService.formatPhoneNumber(ord.customer_phone)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn btn-sm btn-link text-success p-0 text-decoration-none fw-semibold"
+                                style={{ fontSize: '0.78rem' }}
+                                title="Abrir conversa manual com o cliente"
+                              >
+                                <i className="bi bi-whatsapp me-1"></i> WhatsApp
+                              </a>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -769,9 +786,35 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
                   <div className="form-text small">Número com código de país (Ex: 55 para Brasil) e DDD.</div>
                 </div>
 
+                {/* Configuração de Notificação para o Administrador */}
+                <div className="col-12">
+                  <div className="p-3 rounded-3 border bg-light d-flex flex-wrap align-items-center justify-content-between gap-3">
+                    <div>
+                      <div className="fw-bold d-flex align-items-center gap-2">
+                        <i className="bi bi-bell-fill text-warning"></i>
+                        <span>Receber Alertas de Novos Pedidos no WhatsApp do Restaurante</span>
+                      </div>
+                      <small className="text-muted d-block mt-1">
+                        Quando ativado, o administrador recebe uma mensagem instantânea a cada novo pedido realizado. Os clientes acompanham em tempo real diretamente pelo site.
+                      </small>
+                    </div>
+                    <div className="form-check form-switch m-0">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        id="switchNotifyAdminWhatsapp"
+                        checked={settingsForm.notify_admin_whatsapp !== false}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, notify_admin_whatsapp: e.target.checked })}
+                        style={{ width: '2.5rem', height: '1.25rem' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="col-12 col-md-6">
                   <label htmlFor="cfgWhatsappAdmin" className="form-label small fw-bold">
-                    <i className="bi bi-bell-fill text-warning me-1"></i> WhatsApp de Notificações do Administrador
+                    <i className="bi bi-whatsapp text-success me-1"></i> WhatsApp de Notificações do Administrador
                   </label>
                   <input
                     id="cfgWhatsappAdmin"
@@ -781,7 +824,7 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
                     value={settingsForm.admin_notification_whatsapp || ''}
                     onChange={(e) => setSettingsForm({ ...settingsForm, admin_notification_whatsapp: e.target.value })}
                   />
-                  <div className="form-text small">Número que receberá alertas automáticos de novos pedidos.</div>
+                  <div className="form-text small">Número do celular (com DDD) que receberá os alertas de novos pedidos.</div>
                 </div>
 
                 {/* Gateway Opcional (Evolution API, Z-API ou Twilio) */}
@@ -1260,18 +1303,6 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
         </div>
       )}
 
-      {/* ===================== MODAL DE NOTIFICAÇÃO WHATSAPP ===================== */}
-      <WhatsAppNotificationModal
-        isOpen={isWhatsAppModalOpen}
-        onClose={() => {
-          setIsWhatsAppModalOpen(false);
-          setWhatsAppModalOrder(null);
-          setWhatsAppModalStatus(null);
-        }}
-        order={whatsAppModalOrder}
-        newStatus={whatsAppModalStatus}
-        restaurant={restaurant}
-      />
     </div>
   );
 }

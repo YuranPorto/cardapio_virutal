@@ -96,8 +96,8 @@ export const orderService = {
     existingOrders.unshift(newOrder);
     localStorage.setItem(ORDERS_KEY, JSON.stringify(existingOrders));
 
-    // Disparar notificações automáticas no WhatsApp do cliente e do restaurante
-    whatsappService.notifyOrderCreated(newOrder, restaurant);
+    // Notificar exclusivamente o WhatsApp do restaurante (caso configurado pelo admin)
+    whatsappService.notifyAdminNewOrder(newOrder, restaurant);
 
     return newOrder;
   },
@@ -186,11 +186,7 @@ export const orderService = {
       }
     }
 
-    // Disparar notificação automática via WhatsApp
-    if (targetOrder) {
-      whatsappService.notifyOrderStatusUpdate(targetOrder, newStatus, restaurant);
-    }
-
+    // Status atualizado com sucesso (propagado em tempo real via Supabase Realtime para a tela do cliente)
     return targetOrder;
   },
 

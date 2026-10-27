@@ -2,21 +2,67 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { orderService } from '../services/orderService';
 import { whatsappService } from '../services/whatsappService';
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export function OrderTrackingModal({ isOpen, onClose, restaurant }) {
   const { user, profile } = useAuth();
   const [orders, setOrders] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
 
     loadOrders();
-    // Atualiza a cada 10 segundos caso a janela esteja aberta
-    const interval = setInterval(loadOrders, 10000);
-    return () => clearInterval(interval);
-  }, [isOpen, user, profile]);
+
+    // Supabase Realtime: sincronização instantânea quando o restaurante atualiza o status
+    let channel = null;
+    if (isSupabaseConfigured) {
+      channel = supabase
+        .channel(`tracking-orders-live-${Date.now()}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'orders' },
+          (payload) => {
+            if (payload.new) {
+              const updatedRow = payload.new;
+              setOrders((prev) => {
+                const index = prev.findIndex((o) => o.id === updatedRow.id);
+                if (index !== -1) {
+                  const updatedList = [...prev];
+                  updatedList[index] = { ...updatedList[index], ...updatedRow };
+                  return updatedList;
+                }
+                return prev;
+              });
+
+              setSelectedOrder((prevSelected) => {
+                if (prevSelected && prevSelected.id === updatedRow.id) {
+                  return { ...prevSelected, ...updatedRow };
+                }
+                return prevSelected;
+              });
+            }
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            setIsLiveConnected(true);
+          }
+        });
+    }
+
+    // Intervalo de segurança suave a cada 15s como fallback
+    const interval = setInterval(loadOrders, 15000);
+
+    return () => {
+      clearInterval(interval);
+      if (channel && isSupabaseConfigured) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [isOpen, user?.id, profile?.phone]);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -63,9 +109,15 @@ export function OrderTrackingModal({ isOpen, onClose, restaurant }) {
       <div className="modal-dialog modal-dialog-centered modal-lg">
         <div className="modal-content rounded-4 border-0 shadow-lg overflow-hidden">
           <div className="modal-header border-bottom py-3 px-4">
-            <div className="d-flex align-items-center gap-2">
-              <i className="bi bi-clock-history text-primary fs-5"></i>
-              <h5 className="modal-title fw-bold">Acompanhar Meus Pedidos</h5>
+            <div className="d-flex align-items-center gap-3">
+              <div className="d-flex align-items-center gap-2">
+                <i className="bi bi-clock-history text-primary fs-5"></i>
+                <h5 className="modal-title fw-bold mb-0">Acompanhar Meus Pedidos</h5>
+              </div>
+              <span className={`badge rounded-pill px-2 py-1 small d-none d-sm-inline-flex align-items-center gap-1 ${isLiveConnected ? 'bg-success bg-opacity-10 text-success border border-success-subtle' : 'bg-secondary bg-opacity-10 text-secondary'}`}>
+                <span className={`spinner-grow spinner-grow-sm ${isLiveConnected ? 'text-success' : 'text-secondary'}`} style={{ width: '7px', height: '7px' }}></span>
+                <span style={{ fontSize: '0.72rem' }}>{isLiveConnected ? 'Ao Vivo (Realtime)' : 'Conectando ao vivo...'}</span>
+              </span>
             </div>
             <button
               type="button"
