@@ -105,29 +105,58 @@ serve(async (req: Request) => {
       `Endereço: ${order.delivery_address?.street}, ${order.delivery_address?.number} (${order.delivery_address?.neighborhood})\n` +
       (order.notes ? `Obs: ${order.notes}\n` : "");
 
-    // Exemplo de integração externa com gateway (se configurado no Supabase Secrets)
-    const gatewayUrl = Deno.env.get("WHATSAPP_GATEWAY_URL");
-    const gatewayToken = Deno.env.get("WHATSAPP_GATEWAY_TOKEN");
+    // Envio externo com gateway (Evolution API, Z-API, etc.)
+    const gatewayUrl = (Deno.env.get("WHATSAPP_GATEWAY_URL") || "").replace(/\/+$/, "");
+    const gatewayToken = Deno.env.get("WHATSAPP_GATEWAY_TOKEN") || "";
+    const instanceName = Deno.env.get("WHATSAPP_INSTANCE_NAME") || "cardapio_demo";
 
     let dispatchedCount = 0;
 
     if (gatewayUrl && gatewayToken) {
-      // Disparo automático via gateway caso configurado
+      const sendViaApi = async (rawPhone: string, text: string) => {
+        const cleanPhone = rawPhone.replace(/\D/g, "");
+        const formatted = cleanPhone.length === 10 || cleanPhone.length === 11 ? `55${cleanPhone}` : cleanPhone;
+
+        // Formato oficial da Evolution API v2
+        const evolutionEndpoint = `${gatewayUrl}/message/sendText/${instanceName}`;
+        try {
+          const res = await fetch(evolutionEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": gatewayToken,
+            },
+            body: JSON.stringify({
+              number: formatted,
+              text: text,
+            }),
+          });
+          if (res.ok) return true;
+        } catch (e) {
+          console.warn("Falha no endpoint Evolution API, tentando fallback:", e);
+        }
+
+        // Fallback genérico (/send-text)
+        try {
+          await fetch(`${gatewayUrl}/send-text`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${gatewayToken}` },
+            body: JSON.stringify({ phone: formatted, message: text }),
+          });
+          return true;
+        } catch (err) {
+          console.error("Falha ao despachar mensagem via gateway:", err);
+          return false;
+        }
+      };
+
       if (recipient_type === "customer" || recipient_type === "both") {
-        await fetch(`${gatewayUrl}/send-text`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${gatewayToken}` },
-          body: JSON.stringify({ phone: order.customer_phone, message: customerMessage }),
-        }).catch(err => console.error("Falha ao enviar para cliente:", err));
+        await sendViaApi(order.customer_phone, customerMessage);
         dispatchedCount++;
       }
 
       if ((recipient_type === "admin" || recipient_type === "both") && adminWhatsApp) {
-        await fetch(`${gatewayUrl}/send-text`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${gatewayToken}` },
-          body: JSON.stringify({ phone: adminWhatsApp, message: adminMessage }),
-        }).catch(err => console.error("Falha ao enviar para admin:", err));
+        await sendViaApi(adminWhatsApp, adminMessage);
         dispatchedCount++;
       }
     }

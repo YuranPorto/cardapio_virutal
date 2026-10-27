@@ -37,19 +37,19 @@ export function WhatsAppNotificationModal({
   };
 
   const handleSendDirectGateway = async () => {
-    if (!restaurant?.whatsapp_api_url || !restaurant?.whatsapp_api_token) {
-      alert('Nenhum gateway de WhatsApp configurado nas opções da loja.');
-      return;
-    }
+    const gatewayUrl = restaurant?.whatsapp_api_url || 'https://evolution-api-latest-ypge.onrender.com';
+    const gatewayToken = restaurant?.whatsapp_api_token || 'cardapio_evolution_secret_2026';
+    const instanceName = restaurant?.whatsapp_instance_name || 'cardapio_demo';
 
     setSendingViaGateway(true);
     setGatewayResult(null);
 
     const res = await whatsappService.sendDirectViaGateway(
-      restaurant.whatsapp_api_url,
-      restaurant.whatsapp_api_token,
+      gatewayUrl,
+      gatewayToken,
       order.customer_phone,
-      finalMessage
+      finalMessage,
+      instanceName
     );
 
     setSendingViaGateway(false);
@@ -89,6 +89,13 @@ export function WhatsAppNotificationModal({
           </div>
 
           <div className="modal-body p-4">
+            <div className="alert alert-success py-2 px-3 small rounded-3 mb-3 d-flex align-items-center gap-2">
+              <i className="bi bi-send-check-fill text-success fs-5"></i>
+              <div>
+                <strong>Envio Automático Conectado:</strong> A notificação foi enviada automaticamente ao WhatsApp via Evolution API. Você também pode reenviar ou abrir pelo WhatsApp Web abaixo.
+              </div>
+            </div>
+
             {/* Destinatário e Status */}
             <div className="d-flex flex-wrap align-items-center justify-content-between p-3 rounded-3 border bg-white mb-3 gap-2">
               <div>

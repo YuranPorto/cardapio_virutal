@@ -96,10 +96,8 @@ export const orderService = {
     existingOrders.unshift(newOrder);
     localStorage.setItem(ORDERS_KEY, JSON.stringify(existingOrders));
 
-    // Disparar Edge Function caso configurado
-    if (newOrder.id) {
-      whatsappService.triggerEdgeFunctionNotification(newOrder.id, 'both');
-    }
+    // Disparar notificações automáticas no WhatsApp do cliente e do restaurante
+    whatsappService.notifyOrderCreated(newOrder, restaurant);
 
     return newOrder;
   },
@@ -157,7 +155,7 @@ export const orderService = {
     return this.getLocalOrders();
   },
 
-  async updateOrderStatus(orderId, newStatus, restaurantName = 'Restaurante') {
+  async updateOrderStatus(orderId, newStatus, restaurant = null) {
     let orders = this.getLocalOrders();
     let targetOrder = null;
 
@@ -188,8 +186,10 @@ export const orderService = {
       }
     }
 
-    // Disparar notificação via Edge function
-    whatsappService.triggerEdgeFunctionNotification(orderId, 'customer', newStatus);
+    // Disparar notificação automática via WhatsApp
+    if (targetOrder) {
+      whatsappService.notifyOrderStatusUpdate(targetOrder, newStatus, restaurant);
+    }
 
     return targetOrder;
   },

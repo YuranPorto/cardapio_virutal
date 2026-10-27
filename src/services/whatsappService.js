@@ -1,5 +1,11 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
+export const EVOLUTION_CONFIG = {
+  url: 'https://evolution-api-latest-ypge.onrender.com',
+  token: 'cardapio_evolution_secret_2026',
+  instance: 'cardapio_demo',
+};
+
 export const whatsappService = {
   formatPhoneNumber(phone) {
     if (!phone) return '';
@@ -146,16 +152,48 @@ export const whatsappService = {
     return null;
   },
 
-  async sendDirectViaGateway(gatewayUrl, gatewayToken, phone, message) {
-    if (!gatewayUrl || !gatewayToken) return { success: false, error: 'Gateway não configurado' };
+  async sendDirectViaGateway(gatewayUrl, gatewayToken, phone, message, instanceName = 'cardapio_demo') {
+    const activeUrl = (gatewayUrl || EVOLUTION_CONFIG.url).replace(/\/+$/, '');
+    const activeToken = gatewayToken || EVOLUTION_CONFIG.token;
+    const activeInstance = instanceName || EVOLUTION_CONFIG.instance;
+    const formattedPhone = this.formatPhoneNumber(phone);
 
+    if (!formattedPhone) return { success: false, error: 'Telefone inválido' };
+
+    // Tentativa 1: Evolution API v2 (/message/sendText/{instance})
     try {
-      const formattedPhone = this.formatPhoneNumber(phone);
-      const res = await fetch(`${gatewayUrl}/send-text`, {
+      const evolutionRes = await fetch(`${activeUrl}/message/sendText/${activeInstance}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${gatewayToken}`,
+          apikey: activeToken,
+        },
+        body: JSON.stringify({
+          number: formattedPhone,
+          text: message,
+        }),
+      });
+
+      if (evolutionRes.ok) {
+        const data = await evolutionRes.json();
+        console.log(`[WhatsApp] Mensagem enviada com sucesso para ${formattedPhone}:`, data);
+        return { success: true, data };
+      } else {
+        const errText = await evolutionRes.text();
+        console.warn(`[WhatsApp] Erro Evolution API (${evolutionRes.status}):`, errText);
+      }
+    } catch (e) {
+      console.warn('Falha Evolution API sendText, tentando fallback:', e);
+    }
+
+    // Tentativa 2: Fallback genérico (/send-text)
+    try {
+      const res = await fetch(`${activeUrl}/send-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${activeToken}`,
+          apikey: activeToken,
         },
         body: JSON.stringify({
           phone: formattedPhone,
@@ -167,6 +205,66 @@ export const whatsappService = {
       return { success: res.ok, data: json };
     } catch (err) {
       return { success: false, error: err.message };
+    }
+  },
+
+  async notifyOrderCreated(order, restaurant) {
+    const restaurantName = restaurant?.name || 'Cardápio Gourmet';
+    const gatewayUrl = restaurant?.whatsapp_api_url || EVOLUTION_CONFIG.url;
+    const gatewayToken = restaurant?.whatsapp_api_token || EVOLUTION_CONFIG.token;
+    const instanceName = restaurant?.whatsapp_instance_name || EVOLUTION_CONFIG.instance;
+
+    // 1. Mensagem para o cliente
+    if (order?.customer_phone) {
+      const customerMsg = this.buildCustomerNotificationText(order, restaurantName, 'pending');
+      await this.sendDirectViaGateway(gatewayUrl, gatewayToken, order.customer_phone, customerMsg, instanceName);
+    }
+
+    // 2. Mensagem para o admin do restaurante
+    const adminPhone = restaurant?.admin_notification_whatsapp || restaurant?.phone_whatsapp || '5512982096857';
+    if (adminPhone) {
+      const adminMsg = this.buildAdminNotificationText(order, restaurantName);
+      await this.sendDirectViaGateway(gatewayUrl, gatewayToken, adminPhone, adminMsg, instanceName);
+    }
+
+    // 3. Notificar via Edge Function como redundância
+    if (order?.id) {
+      this.triggerEdgeFunctionNotification(order.id, 'both');
+    }
+  },
+
+  async notifyOrderStatusUpdate(order, newStatus, restaurant) {
+    const restaurantName = typeof restaurant === 'object' && restaurant?.name ? restaurant.name : (restaurant || 'Cardápio Gourmet');
+    const gatewayUrl = (typeof restaurant === 'object' && restaurant?.whatsapp_api_url) || EVOLUTION_CONFIG.url;
+    const gatewayToken = (typeof restaurant === 'object' && restaurant?.whatsapp_api_token) || EVOLUTION_CONFIG.token;
+    const instanceName = (typeof restaurant === 'object' && restaurant?.whatsapp_instance_name) || EVOLUTION_CONFIG.instance;
+
+    // Mensagem para o cliente informando a atualização de status
+    if (order?.customer_phone) {
+      const customerMsg = this.buildCustomerNotificationText(order, restaurantName, newStatus);
+      await this.sendDirectViaGateway(gatewayUrl, gatewayToken, order.customer_phone, customerMsg, instanceName);
+    }
+
+    if (order?.id) {
+      this.triggerEdgeFunctionNotification(order.id, 'customer', newStatus);
+    }
+  },
+
+  async fetchInstanceQrCode(gatewayUrl, gatewayToken, instanceName = 'cardapio_demo') {
+    const activeUrl = (gatewayUrl || EVOLUTION_CONFIG.url).replace(/\/+$/, '');
+    const activeToken = gatewayToken || EVOLUTION_CONFIG.token;
+    const activeInstance = instanceName || EVOLUTION_CONFIG.instance;
+
+    try {
+      const res = await fetch(`${activeUrl}/instance/connect/${activeInstance}`, {
+        method: 'GET',
+        headers: { apikey: activeToken },
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (err) {
+      console.warn('Erro ao obter QR code da Evolution API:', err);
+      return null;
     }
   },
 };

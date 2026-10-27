@@ -18,6 +18,9 @@ export const initialRestaurantData = {
   minimum_order: 25.00,
   is_open: true,
   address_text: "Av. Paulista, 1000 - Bela Vista, São Paulo - SP",
+  whatsapp_api_url: "https://evolution-api-latest-ypge.onrender.com",
+  whatsapp_api_token: "cardapio_evolution_secret_2026",
+  whatsapp_instance_name: "cardapio_demo",
 };
 
 export const initialCategories = [

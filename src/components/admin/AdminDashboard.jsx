@@ -48,6 +48,9 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
   const [whatsAppModalOrder, setWhatsAppModalOrder] = useState(null);
   const [whatsAppModalStatus, setWhatsAppModalStatus] = useState(null);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  const [qrCodeImage, setQrCodeImage] = useState(null);
+  const [loadingQr, setLoadingQr] = useState(false);
+  const [qrFeedback, setQrFeedback] = useState('');
 
   // Testador de WhatsApp
   const [testWhatsAppPhone, setTestWhatsAppPhone] = useState(restaurant?.phone_whatsapp || '5511999998888');
@@ -84,8 +87,8 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
 
   // ===================== AÇÕES DE PEDIDOS / FILA =====================
   const handleUpdateStatus = async (order, newStatus) => {
-    // 1. Atualiza no banco/serviço
-    const updated = await orderService.updateOrderStatus(order.id, newStatus, restaurant?.name);
+    // 1. Atualiza no banco/serviço (dispara notificação automática instantânea via WhatsApp)
+    const updated = await orderService.updateOrderStatus(order.id, newStatus, restaurant);
     await loadOrders();
 
     // 2. Abre o modal oficial de notificação WhatsApp garantindo disparo 100% confiável
@@ -101,15 +104,28 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
   };
 
   // Teste de disparo de WhatsApp
-  const handleRunWhatsAppTest = () => {
+  const handleRunWhatsAppTest = async () => {
     if (!testWhatsAppPhone || testWhatsAppPhone.replace(/\D/g, '').length < 10) {
       alert('Informe um número de telefone com DDD válido para o teste.');
       return;
     }
     const testMsg = whatsappService.buildTestNotificationText(restaurant?.name, testWhatsAppStatus);
-    whatsappService.openWhatsApp(testWhatsAppPhone, testMsg);
-    setTestMessageFeedback('Disparo iniciado no WhatsApp! Verifique sua janela do WhatsApp Web / App.');
-    setTimeout(() => setTestMessageFeedback(''), 5000);
+    setTestMessageFeedback('Enviando mensagem de teste via Evolution API...');
+
+    const res = await whatsappService.sendDirectViaGateway(
+      settingsForm.whatsapp_api_url,
+      settingsForm.whatsapp_api_token,
+      testWhatsAppPhone,
+      testMsg
+    );
+
+    if (res?.success) {
+      setTestMessageFeedback('✅ Mensagem entregue com sucesso diretamente no seu WhatsApp!');
+    } else {
+      whatsappService.openWhatsApp(testWhatsAppPhone, testMsg);
+      setTestMessageFeedback('Disparo iniciado no WhatsApp Web / App!');
+    }
+    setTimeout(() => setTestMessageFeedback(''), 6000);
   };
 
   // ===================== AÇÕES DE CATEGORIAS =====================
@@ -797,6 +813,87 @@ export function AdminDashboard({ restaurant, onRestaurantUpdate, onExitAdmin }) 
                     onChange={(e) => setSettingsForm({ ...settingsForm, whatsapp_api_token: e.target.value })}
                   />
                   <div className="form-text small">Token de autorização da sua instância de WhatsApp.</div>
+                </div>
+
+                {/* CARD DE CONEXÃO WHATSAPP VIA QR CODE */}
+                <div className="col-12">
+                  <div className="p-3 rounded-4 border bg-white shadow-sm">
+                    <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                      <div className="d-flex align-items-center gap-2">
+                        <div
+                          className="rounded-circle d-flex align-items-center justify-content-center text-white"
+                          style={{ width: '36px', height: '36px', backgroundColor: '#25D366' }}
+                        >
+                          <i className="bi bi-qr-code fs-5"></i>
+                        </div>
+                        <div>
+                          <h6 className="fw-bold mb-0">Conectar WhatsApp do Restaurante (QR Code)</h6>
+                          <small className="text-muted">Aponte a câmera do seu WhatsApp em Aparelhos Conectados</small>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-outline-success btn-sm fw-bold d-flex align-items-center gap-1"
+                        disabled={loadingQr}
+                        onClick={async () => {
+                          setLoadingQr(true);
+                          setQrFeedback('');
+                          try {
+                            const url = settingsForm.whatsapp_api_url || 'https://evolution-api-latest-ypge.onrender.com';
+                            const token = settingsForm.whatsapp_api_token || 'cardapio_evolution_secret_2026';
+                            const qrData = await whatsappService.fetchInstanceQrCode(url, token, 'cardapio_demo');
+                            if (qrData?.base64) {
+                              setQrCodeImage(qrData.base64);
+                              setQrFeedback('QR Code gerado! Aponte o WhatsApp do celular.');
+                            } else if (qrData?.instance?.state === 'open' || qrData?.state === 'open') {
+                              setQrCodeImage(null);
+                              setQrFeedback('✅ WhatsApp já está conectado e autenticado!');
+                            } else {
+                              setQrFeedback('Aguardando inicialização da instância ou WhatsApp já conectado.');
+                            }
+                          } catch (e) {
+                            setQrFeedback('Erro ao conectar com a Evolution API. Verifique as credenciais.');
+                          } finally {
+                            setLoadingQr(false);
+                          }
+                        }}
+                      >
+                        {loadingQr ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            <span>Buscando QR Code...</span>
+                          </>
+                        ) : (
+                          <>
+                            <i className="bi bi-arrow-repeat"></i>
+                            <span>Gerar / Atualizar QR Code</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {qrFeedback && (
+                      <div className="alert alert-info py-2 px-3 small mt-2 mb-0 d-flex align-items-center gap-2">
+                        <i className="bi bi-info-circle"></i>
+                        <span>{qrFeedback}</span>
+                      </div>
+                    )}
+
+                    {qrCodeImage && (
+                      <div className="text-center py-3 bg-light rounded-3 mt-2">
+                        <img
+                          src={qrCodeImage.startsWith('data:') ? qrCodeImage : `data:image/png;base64,${qrCodeImage}`}
+                          alt="QR Code WhatsApp"
+                          className="img-fluid rounded-3 shadow-sm border p-2 bg-white"
+                          style={{ maxWidth: '240px' }}
+                        />
+                        <div className="small text-muted mt-2">
+                          <i className="bi bi-phone me-1"></i> No seu celular: <strong>WhatsApp ➔ Configurações ➔ Aparelhos Conectados ➔ Conectar um aparelho</strong>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* CARD DE TESTE DE DISPARO DE WHATSAPP */}

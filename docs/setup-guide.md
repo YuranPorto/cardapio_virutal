@@ -99,3 +99,36 @@ Acesse a aplicação no navegador em `http://localhost:5173`.
 npm run build
 ```
 A pasta `dist` gerada pode ser hospedada em qualquer serviço moderno (Vercel, Netlify, Cloudflare Pages, AWS S3/CloudFront).
+
+---
+
+## 4. Execução da Evolution API via Docker (WhatsApp Automático)
+
+Para rodar a Evolution API localmente no seu computador:
+
+1. **Iniciar o container**:
+   ```powershell
+   docker compose up -d
+   ```
+2. **Acompanhar os logs de inicialização**:
+   ```powershell
+   docker compose logs -f
+   ```
+3. **Acessar a documentação interativa (Swagger)**:
+   - Abra no navegador: `http://localhost:8080/docs`
+   - Chave Global de Autenticação configurada: `cardapio_evolution_secret_2026`
+4. **Criar a Instância do Restaurante e Escanear o QR Code**:
+   - No Swagger ou via requisição POST para `http://localhost:8080/instance/create`:
+     ```json
+     {
+       "instanceName": "restaurante_default",
+       "qrcode": true,
+       "integration": "WHATSAPP-BAILEYS"
+     }
+     ```
+   - O QR Code aparecerá na tela para você escanear com o seu celular no WhatsApp (`Aparelhos Conectados`).
+5. **Configurar no Painel Admin do Cardápio**:
+   - Na aba **Configurações & WhatsApp**, preencha:
+     - **URL do Gateway WhatsApp**: `http://localhost:8080` (ou sua URL pública)
+     - **Token do Gateway WhatsApp**: `cardapio_evolution_secret_2026`
+
